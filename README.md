@@ -17,7 +17,7 @@ The official Cubox CLI. Save, search, read, and use what you read with AI. Your 
 | -------- | ------------------------------------------------------------------------------------- |
 | Folders  | List and browse card folders                                                      |
 | Tags     | List and browse tag hierarchy; rename, batch delete, and merge tags                   |
-| Cards    | Filter/search cards by folder, tag, starred/read/annotated/archived status, keyword, time range |
+| Cards    | Filter/search cards by folder, tag, starred/read/annotated/archived status, keyword, exact URL, time range |
 | RAG      | Semantic search via natural language query (intent-based retrieval)                    |
 | Content  | Read full card detail with article content (markdown), annotations, and AI insight    |
 | Save     | Save web pages with optional title/description, batch via JSON            |
@@ -245,7 +245,7 @@ cubox-cli tag merge --source SRC_ID[,ID2,...] --target TARGET_ID
 
 ### `cubox-cli card list`
 
-Filter and search cards. Supports keyword search with page-based pagination, and cursor-based pagination for browsing.
+Filter and search cards. Supports keyword search and exact URL lookup with page-based pagination, and cursor-based pagination for browsing.
 
 ```bash
 cubox-cli card list [flags]
@@ -262,15 +262,16 @@ cubox-cli card list [flags]
 | `--annotated`       | Only cards with annotations                                        |
 | `--archived`        | Only archived cards (default: non-archived only)                   |
 | `--keyword TEXT`    | Search by keyword                                                  |
+| `--url URL`         | Filter by exact card URL                                           |
 | `--start-time TIME` | Filter by create time start (e.g. `2026-01-01T00:00:00:000+08:00`) |
 | `--end-time TIME`   | Filter by create time end                                          |
 | `--limit N`         | Page size (default 50)                                             |
 | `--last-id CARD_ID` | Cursor pagination for browsing (non-search)                        |
-| `--page N`          | Page number for search (1-based, used with `--keyword`)            |
+| `--page N`          | Page number for search (1-based, used with `--keyword` or `--url`) |
 | `--all`             | Auto-paginate to fetch all results                                 |
 
 
-**Pagination:** When `--keyword` is set, use `--page` for pagination. Otherwise, use `--last-id` with the last card's ID.
+**Pagination:** When `--keyword` or `--url` is set, use `--page` for pagination. Otherwise, use `--last-id` with the last card's ID.
 
 ### `cubox-cli card detail --id ID`
 
@@ -296,8 +297,9 @@ cubox-cli card rag --query "how to build a REST API with authentication" -o pret
 | --------------- | -------------------------------------- |
 | `--query TEXT`  | Natural language query text (required) |
 
-**When to use RAG vs keyword search:**
+**When to use RAG vs keyword vs URL:**
 
+- **`card list --url`** — look up a card by its exact stored URL
 - **`card list --keyword`** — exact terms, known titles, domain names, short phrases
 - **`card rag --query`** — questions, topic exploration, conceptual or fuzzy queries
 
@@ -425,6 +427,12 @@ cubox-cli annotation list [flags]
 
 ```bash
 cubox-cli card list --keyword "machine learning" --page 1 -o pretty
+```
+
+### Look up a card by exact URL
+
+```bash
+cubox-cli card list --url "https://example.com/article" -o pretty
 ```
 
 ### Semantic search (RAG)

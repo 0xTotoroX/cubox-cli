@@ -1,6 +1,6 @@
 {
   "name": "cubox-cli",
-  "version": "0.1.0",
+  "version": "1.0.10",
   "description": "The official Cubox CLI tool, built for humans and AI Agents",
   "bin": {
     "cubox-cli": "scripts/run.js"

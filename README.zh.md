@@ -17,7 +17,7 @@ Cubox 官方 CLI。收藏、搜索、阅读，并借助 AI 使用你读过的内
 | --- | ---------------------------------- |
 | 收藏夹 | 列出和浏览文件夹                         |
 | 标签  | 列出和浏览标签层级；重命名、批量删除、合并标签              |
-| 卡片  | 按收藏夹、标签、星标/已读/标注/归档状态、关键词、时间范围过滤和搜索卡片 |
+| 卡片  | 按收藏夹、标签、星标/已读/标注/归档状态、关键词、精确网址、时间范围过滤和搜索卡片 |
 | RAG  | 自然语言语义搜索（基于意图的智能检索）                 |
 | 详情  | 查看卡片全文（Markdown）、标注、AI 洞察（摘要 + 问答） |
 | 保存  | 保存网页，支持标题/描述，批量 JSON 输入            |
@@ -245,7 +245,7 @@ cubox-cli tag merge --source SRC_ID[,ID2,...] --target TARGET_ID
 
 ### `cubox-cli card list`
 
-过滤和搜索收藏卡片。支持关键词搜索（使用页码分页）和浏览模式（使用游标分页）。
+过滤和搜索收藏卡片。支持关键词搜索、按精确网址查询（使用页码分页）和浏览模式（使用游标分页）。
 
 ```bash
 cubox-cli card list [flags]
@@ -262,15 +262,16 @@ cubox-cli card list [flags]
 | `--annotated`       | 仅有标注的卡片                                      |
 | `--archived`        | 仅归档卡片（默认仅返回未归档卡片）                              |
 | `--keyword TEXT`    | 关键词搜索                                        |
+| `--url URL`         | 按卡片网址精确匹配                                    |
 | `--start-time TIME` | 按收藏开始时间过滤（如 `2026-01-01T00:00:00:000+08:00`） |
 | `--end-time TIME`   | 按收藏结束时间过滤                                    |
 | `--limit N`         | 每页数量（默认 50）                                  |
 | `--last-id CARD_ID` | 浏览模式的游标分页（非搜索）                               |
-| `--page N`          | 搜索模式的页码（从 1 开始，配合 `--keyword` 使用）            |
+| `--page N`          | 搜索模式的页码（从 1 开始，配合 `--keyword` 或 `--url` 使用） |
 | `--all`             | 自动翻页获取全部结果                                   |
 
 
-**分页规则：** 使用 `--keyword` 搜索时，用 `--page` 翻页；不搜索时，用 `--last-id` 游标分页。
+**分页规则：** 使用 `--keyword` 或 `--url` 时，用 `--page` 翻页；否则用 `--last-id` 游标分页。
 
 ### `cubox-cli card detail --id ID`
 
@@ -296,8 +297,9 @@ cubox-cli card rag --query "如何构建带认证的 REST API" -o pretty
 | ------------- | -------------------- |
 | `--query TEXT` | 自然语言查询文本（必填） |
 
-**何时用 RAG vs 关键词搜索：**
+**何时用 RAG vs 关键词 vs 网址：**
 
+- **`card list --url`** — 按卡片存储的完整网址精确查找
 - **`card list --keyword`** — 精确词汇、已知标题、域名、短语
 - **`card rag --query`** — 提问、主题探索、概念性或模糊查询
 
@@ -426,6 +428,12 @@ cubox-cli annotation list [flags]
 
 ```bash
 cubox-cli card list --keyword "机器学习" --page 1 -o pretty
+```
+
+### 按精确网址查找卡片
+
+```bash
+cubox-cli card list --url "https://example.com/article" -o pretty
 ```
 
 ### 语义搜索（RAG）

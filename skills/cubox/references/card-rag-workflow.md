@@ -1,12 +1,13 @@
 # RAG vs Keyword Search — Decision & Workflow
 
-This reference defines how to choose between `card list --keyword` and `card rag --query`, and how to handle results progressively. **Follow these rules whenever the user asks you to find, search, or retrieve bookmarks from Cubox.**
+This reference defines how to choose between `card list --keyword`, `card list --url`, and `card rag --query`, and how to handle results progressively. **Follow these rules whenever the user asks you to find, search, or retrieve bookmarks from Cubox.**
 
 ## Step 1 — Choose the right search method
 
 
 | User intent                                           | Method                     | Example                                                                                 |
 | ----------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------- |
+| Known full URL (exact lookup)                         | `card list --url`          | "have I saved https://example.com/article", "find the card for this URL"                |
 | Exact term, title fragment, domain, known phrase      | `card list --keyword`      | "find my bookmarks from csdn.net", "search for 'React hooks'"                           |
 | Conceptual question, topic exploration, fuzzy intent  | `card rag --query`         | "articles about building REST APIs with auth", "what did I save about LLM fine-tuning?" |
 | Browse / filter by metadata (folder, tag, star, time) | `card list` (with filters) | "show starred cards from last week", "list cards in folder X"                           |
@@ -14,9 +15,10 @@ This reference defines how to choose between `card list --keyword` and `card rag
 
 **Decision rules:**
 
+- If the user provides a full URL → use `card list --url`. Empty results mean no exact match; do not retry with `--keyword`.
 - If the user provides 1–3 specific words that are clearly keywords → use `card list --keyword`.
 - If the user describes an intent, asks a question, or uses a phrase that would benefit from semantic understanding → use `card rag --query`.
-- If in doubt, prefer `card rag` — it is a superset that handles both precise and fuzzy queries well.
+- If in doubt (and it is not a URL), prefer `card rag` — it is a superset that handles both precise and fuzzy queries well.
 - You can combine: first `card rag` for discovery, then `card list --keyword` or `card list` with filters to narrow down.
 
 ## Step 2 — Refine the query before sending

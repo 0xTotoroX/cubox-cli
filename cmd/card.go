@@ -12,20 +12,21 @@ import (
 
 var (
 	cardFolderFilter []string
-	cardTagFilter   []string
-	cardStarred     bool
-	cardRead        bool
-	cardUnread      bool
-	cardAnnotated   bool
-	cardArchived    bool
-	cardLimit       int
-	cardLastID      string
-	cardAll         bool
-	cardKeyword     string
-	cardPage        int
-	cardStartTime   string
-	cardEndTime     string
-	cardDetailID    string
+	cardTagFilter    []string
+	cardStarred      bool
+	cardRead         bool
+	cardUnread       bool
+	cardAnnotated    bool
+	cardArchived     bool
+	cardLimit        int
+	cardLastID       string
+	cardAll          bool
+	cardKeyword      string
+	cardUrlFilter    string
+	cardPage         int
+	cardStartTime    string
+	cardEndTime      string
+	cardDetailID     string
 )
 
 var cardCmd = &cobra.Command{
@@ -36,13 +37,13 @@ var cardCmd = &cobra.Command{
 var cardListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List and filter cards",
-	Long: `Filter and list cards. Supports keyword search.
+	Long: `Filter and list cards. Supports keyword search and exact URL lookup.
 
 By default only non-archived cards are returned. Use --archived to
 list archived cards instead.
 
-When using --keyword for search, pagination uses --page (1-based).
-Without --keyword, pagination uses --last-id (cursor-based).
+When using --keyword or --url, pagination uses --page (1-based).
+Otherwise, pagination uses --last-id (cursor-based).
 
 Examples:
   cubox-cli card list
@@ -50,6 +51,7 @@ Examples:
   cubox-cli card list --folder 7230156249357091393 --all
   cubox-cli card list --archived --limit 10
   cubox-cli card list --keyword "AI agent" --page 1
+  cubox-cli card list --url "https://example.com/article"
   cubox-cli card list --start-time 2026-01-01
   cubox-cli card list --start-time 7d --end-time today`,
 	RunE: runCardList,
@@ -79,6 +81,7 @@ when exact keywords don't match.
 
 Use this for questions, conceptual queries, or topic exploration.
 Use "card list --keyword" for exact or simple keyword matching.
+Use "card list --url" to look up a card by its exact URL.
 
 Examples:
   cubox-cli card rag --query "Java实现数据库图片上传功能"
@@ -99,6 +102,7 @@ func init() {
 	cardListCmd.Flags().StringVar(&cardLastID, "last-id", "", "last card ID for cursor pagination (non-search)")
 	cardListCmd.Flags().BoolVar(&cardAll, "all", false, "auto-paginate to fetch all results")
 	cardListCmd.Flags().StringVar(&cardKeyword, "keyword", "", "search keyword")
+	cardListCmd.Flags().StringVar(&cardUrlFilter, "url", "", "filter by exact card URL")
 	cardListCmd.Flags().IntVar(&cardPage, "page", 0, "page number for search pagination (1-based)")
 	cardListCmd.Flags().StringVar(&cardStartTime, "start-time", "", "filter start time (today, yesterday, 7d, 2006-01-02, or full timestamp)")
 	cardListCmd.Flags().StringVar(&cardEndTime, "end-time", "", "filter end time (today, yesterday, 7d, 2006-01-02, or full timestamp)")
@@ -125,11 +129,12 @@ func buildCardFilterRequest() (*client.CardFilterRequest, error) {
 
 	req := &client.CardFilterRequest{
 		FolderFilters: cardFolderFilter,
-		TagFilters:   cardTagFilter,
-		Limit:        cardLimit,
-		Keyword:      cardKeyword,
-		StartTime:    startTime,
-		EndTime:      endTime,
+		TagFilters:    cardTagFilter,
+		Limit:         cardLimit,
+		Keyword:       cardKeyword,
+		UrlFilter:     cardUrlFilter,
+		StartTime:     startTime,
+		EndTime:       endTime,
 	}
 
 	if cardStarred {
@@ -153,7 +158,7 @@ func buildCardFilterRequest() (*client.CardFilterRequest, error) {
 		req.Archived = &v
 	}
 
-	if cardKeyword != "" {
+	if isCardSearchMode() {
 		if cardPage > 0 {
 			req.Page = cardPage
 		} else {
@@ -164,6 +169,10 @@ func buildCardFilterRequest() (*client.CardFilterRequest, error) {
 	}
 
 	return req, nil
+}
+
+func isCardSearchMode() bool {
+	return cardKeyword != "" || cardUrlFilter != ""
 }
 
 func runCardList(cmd *cobra.Command, args []string) error {
@@ -198,7 +207,7 @@ func runCardList(cmd *cobra.Command, args []string) error {
 func runCardListAll(c *client.Client, req *client.CardFilterRequest) error {
 	var allCards []client.Card
 
-	if req.Keyword != "" {
+	if req.Keyword != "" || req.UrlFilter != "" {
 		for page := 1; ; page++ {
 			req.Page = page
 			cards, err := c.FilterCards(req)

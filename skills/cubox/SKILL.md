@@ -1,6 +1,6 @@
 ---
 name: cubox
-version: 1.0.9
+version: 1.0.10
 description: "Cubox CLI is a callable personal reading memory system that enables you to search, read, and use saved content, perform semantic (RAG-based) queries, access articles, highlights, and metadata, save URLs, update content states, and retrieve annotations and structure such as folders and tags. Use this tool when a task depends on the user’s reading history or requires context from their Cubox library."
 metadata:
   requires:
@@ -83,6 +83,7 @@ Flags:
 - `--annotated` — cards with annotations only
 - `--archived` — archived cards only (default: only non-archived)
 - `--keyword TEXT` — search by keyword
+- `--url URL` — filter by exact card URL (must match the stored `url` field exactly)
 - `--start-time`, `--end-time` — filter by time range (see **Time filtering** below)
 - `--limit N` — page size (default 50)
 - `--last-id CARD_ID` — cursor pagination (non-search mode)
@@ -91,8 +92,8 @@ Flags:
 
 **Pagination rules:**
 
-- When `--keyword` is set (search mode): use `--page` for pagination, `--last-id` is ignored
-- When `--keyword` is not set (browse mode): use `--last-id` for cursor-based pagination
+- When `--keyword` or `--url` is set (search mode): use `--page` for pagination, `--last-id` is ignored
+- When neither `--keyword` nor `--url` is set (browse mode): use `--last-id` for cursor-based pagination
 
 **Archive filter:** by default the API returns only non-archived cards. Pass `--archived` to list archived cards instead. There is no flag for "both at once" — make two calls if you need a combined view.
 
@@ -114,7 +115,7 @@ Returns full card with `content` (markdown), `author`, `annotations`, and `insig
 cubox-cli card rag --query "QUERY_TEXT"
 ```
 
-Semantic search via natural language. Unlike `--keyword`, RAG understands intent and returns conceptually relevant cards. **[Must-read: RAG workflow](references/card-rag-workflow.md)** is the detailed policy for choosing RAG vs keyword, refining queries, fetching details progressively, and re-ranking.
+Semantic search via natural language. Unlike `--keyword`, RAG understands intent and returns conceptually relevant cards. **[Must-read: RAG workflow](references/card-rag-workflow.md)** is the detailed policy for choosing RAG vs keyword vs exact URL, refining queries, fetching details progressively, and re-ranking.
 
 Returns: `[{ "id", "title", "description", "domain", "tags", "folder", "url", ... }]` (same Card shape as `card list`)
 
@@ -259,6 +260,14 @@ cubox-cli card detail --id CARD_ID
 
 ```bash
 cubox-cli card list --keyword "machine learning" --page 1
+```
+
+### Look up a card by exact URL
+
+When the user provides a full URL, use `--url` (not `--keyword`). Empty results mean no exact match — do not retry with `--keyword`.
+
+```bash
+cubox-cli card list --url "https://example.com/article"
 ```
 
 ### Save a page and star it

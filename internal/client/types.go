@@ -65,37 +65,38 @@ type Insight struct {
 
 // CardDetail is the full shape returned by the card/detail endpoint.
 type CardDetail struct {
-	ID           string           `json:"id"`
-	Title        string           `json:"title"`
-	Description  string           `json:"description"`
-	ArticleTitle string           `json:"article_title"`
-	Domain       string           `json:"domain"`
-	Read         bool             `json:"read"`
-	Starred      bool             `json:"starred"`
-	Tags         []string         `json:"tags"`
-	Folder       *Folder          `json:"folder,omitempty"`
-	URL          string           `json:"url"`
-	CreateTime   string           `json:"create_time"`
-	UpdateTime   string           `json:"update_time"`
-	Content      string           `json:"content"`
-	Author       string           `json:"author"`
-	Annotations  []Annotation     `json:"annotations"`
-	Insight      *Insight         `json:"insight,omitempty"`
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Description  string       `json:"description"`
+	ArticleTitle string       `json:"article_title"`
+	Domain       string       `json:"domain"`
+	Read         bool         `json:"read"`
+	Starred      bool         `json:"starred"`
+	Tags         []string     `json:"tags"`
+	Folder       *Folder      `json:"folder,omitempty"`
+	URL          string       `json:"url"`
+	CreateTime   string       `json:"create_time"`
+	UpdateTime   string       `json:"update_time"`
+	Content      string       `json:"content"`
+	Author       string       `json:"author"`
+	Annotations  []Annotation `json:"annotations"`
+	Insight      *Insight     `json:"insight,omitempty"`
 }
 
 type CardFilterRequest struct {
 	FolderFilters []string `json:"folder_filters,omitempty"`
-	TagFilters   []string `json:"tag_filters,omitempty"`
-	Starred      *bool    `json:"starred,omitempty"`
-	Read         *bool    `json:"read,omitempty"`
-	Annotated    *bool    `json:"annotated,omitempty"`
-	Archived     *bool    `json:"archived,omitempty"`
-	LastCardID   string   `json:"last_card_id,omitempty"`
-	Limit        int      `json:"limit,omitempty"`
-	Keyword      string   `json:"keyword,omitempty"`
-	Page         int      `json:"page,omitempty"`
-	StartTime    string   `json:"start_time,omitempty"`
-	EndTime      string   `json:"end_time,omitempty"`
+	TagFilters    []string `json:"tag_filters,omitempty"`
+	Starred       *bool    `json:"starred,omitempty"`
+	Read          *bool    `json:"read,omitempty"`
+	Annotated     *bool    `json:"annotated,omitempty"`
+	Archived      *bool    `json:"archived,omitempty"`
+	LastCardID    string   `json:"last_card_id,omitempty"`
+	Limit         int      `json:"limit,omitempty"`
+	Keyword       string   `json:"keyword,omitempty"`
+	UrlFilter     string   `json:"url_filter,omitempty"`
+	Page          int      `json:"page,omitempty"`
+	StartTime     string   `json:"start_time,omitempty"`
+	EndTime       string   `json:"end_time,omitempty"`
 }
 
 type SaveCardEntry struct {
@@ -126,12 +127,12 @@ type MoveCardsRequest struct {
 }
 
 type CardAddTagsRequest struct {
-	ID               string   `json:"id"`
+	ID                string   `json:"id"`
 	AddTagNestedNames []string `json:"add_tag_nested_names,omitempty"`
 }
 
 type CardRemoveTagsRequest struct {
-	ID                  string   `json:"id"`
+	ID                   string   `json:"id"`
 	RemoveTagNestedNames []string `json:"remove_tag_nested_names,omitempty"`
 }
 
@@ -157,4 +158,3 @@ type AnnotationFilterRequest struct {
 	StartTime        string   `json:"start_time,omitempty"`
 	EndTime          string   `json:"end_time,omitempty"`
 }
-
