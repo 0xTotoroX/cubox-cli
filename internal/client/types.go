@@ -16,6 +16,18 @@ type Folder struct {
 	Uncategorized bool    `json:"uncategorized,omitempty"`
 }
 
+// WebGroup is the folder shape returned by the web/app group API
+// (GET /c/api/v2/group/my). Note the camelCase field names.
+type WebGroup struct {
+	GroupID       string  `json:"groupId"`
+	GroupName     string  `json:"groupName"`
+	ParentGroupID *string `json:"parentGroupId"`
+	Index         int     `json:"index"`
+	Size          int     `json:"size"`
+	Level         *int    `json:"level"`
+	Archiving     bool    `json:"archiving"`
+}
+
 type Tag struct {
 	ID         string  `json:"id"`
 	NestedName string  `json:"nested_name"`

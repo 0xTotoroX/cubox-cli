@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -59,7 +60,24 @@ func (c *Client) post(path string, body interface{}) (json.RawMessage, error) {
 }
 
 func (c *Client) doRequest(req *http.Request) (json.RawMessage, error) {
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	return c.doRequestAuth(req, false)
+}
+
+// doRequestAuth executes the request with one of the two auth styles used by
+// cubox.pro:
+//
+//   - CLI group (/c/api/cli/*):  "Authorization: Bearer <api-extension-token>"
+//   - Web/App group (/c/api/*):  "Authorization: <app-login-token>"  (bare)
+//
+// The two groups use different token systems; the bare form is required by
+// the web app and the native Cubox.app (verified against the app's own
+// requests). See cmd/folder.go for the commands that use the web group.
+func (c *Client) doRequestAuth(req *http.Request, bare bool) (json.RawMessage, error) {
+	if bare {
+		req.Header.Set("Authorization", c.token)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -206,4 +224,86 @@ func (c *Client) FilterAnnotations(req *AnnotationFilterRequest) ([]Annotation, 
 		return nil, fmt.Errorf("parsing annotations: %w", err)
 	}
 	return annotations, nil
+}
+
+// ---- Web/App API group (bare-token auth) ----
+//
+// Folder write operations (create/rename/delete/move) only exist in the
+// web/app group. They are the same endpoints the Cubox web app and the
+// native Cubox.app call. The client must be constructed with the app login
+// token (see config.LoadAppToken).
+
+func (c *Client) webRequest(method, path string, body interface{}) (json.RawMessage, error) {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling request body: %w", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.baseURL+path, rdr)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return c.doRequestAuth(req, true)
+}
+
+// WebListGroups returns all folders via GET /c/api/v2/group/my.
+func (c *Client) WebListGroups() ([]WebGroup, error) {
+	data, err := c.webRequest("GET", "/c/api/v2/group/my", nil)
+	if err != nil {
+		return nil, err
+	}
+	var groups []WebGroup
+	if err := json.Unmarshal(data, &groups); err != nil {
+		return nil, fmt.Errorf("parsing groups: %w", err)
+	}
+	return groups, nil
+}
+
+// WebCreateFolder creates a folder via POST /c/api/group/new.
+// parentID may be empty for a root-level folder.
+// The endpoint expects application/x-www-form-urlencoded input.
+func (c *Client) WebCreateFolder(name, parentID string) (json.RawMessage, error) {
+	form := url.Values{"groupName": {name}}
+	if parentID != "" {
+		form.Set("parentGroupId", parentID)
+	}
+	return c.webPostForm("/c/api/group/new", form)
+}
+
+// WebUpdateFolder renames a folder via POST /c/api/group/update.
+// The endpoint expects application/x-www-form-urlencoded input.
+func (c *Client) WebUpdateFolder(id, name string) (json.RawMessage, error) {
+	form := url.Values{"groupId": {id}, "groupName": {name}}
+	return c.webPostForm("/c/api/group/update", form)
+}
+
+// webPostForm posts application/x-www-form-urlencoded data with the bare
+// Authorization style used by the web/app group.
+func (c *Client) webPostForm(path string, form url.Values) (json.RawMessage, error) {
+	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return c.doRequestAuth(req, true)
+}
+
+// WebMoveFolderCardsOut moves any remaining cards of a folder to
+// Uncategorized and deletes the folder, via
+// POST /c/api/group/moveSearchEnginesOut/{id}. This mirrors the Cubox app's
+// "move cards to Uncategorized" delete option and never loses cards.
+func (c *Client) WebMoveFolderCardsOut(id string) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/group/moveSearchEnginesOut/"+id, nil)
+}
+
+// WebDeleteFolder hard-deletes a folder via POST /c/api/group/delete/{id}.
+// Prefer WebMoveFolderCardsOut unless you know the folder is empty.
+func (c *Client) WebDeleteFolder(id string) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/group/delete/"+id, nil)
 }

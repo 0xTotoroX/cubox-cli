@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 type Config struct {
@@ -101,4 +104,36 @@ func Remove() error {
 		return fmt.Errorf("removing config: %w", err)
 	}
 	return nil
+}
+
+// LoadAppToken returns the Cubox.app login token used by the web/app API
+// group (/c/api/* without the cli segment). Resolution order:
+//
+//  1. CUBOX_CTOKEN environment variable
+//  2. macOS: read "Ctoken" from the Cubox.app group-container preferences
+//     (available whenever the Cubox.app is logged in)
+//
+// Note: this token is separate from the API extension token (Token above).
+// The web/app group requires it sent as a bare Authorization value.
+func LoadAppToken() (string, error) {
+	if t := os.Getenv("CUBOX_CTOKEN"); t != "" {
+		return t, nil
+	}
+	if runtime.GOOS == "darwin" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		plist := filepath.Join(home, "Library", "Group Containers",
+			"group.com.guaiqi.cubox", "Library", "Preferences",
+			"group.com.guaiqi.cubox.plist")
+		out, err := exec.Command("defaults", "read", plist, "Ctoken").Output()
+		if err == nil {
+			if t := strings.TrimSpace(string(out)); t != "" {
+				return t, nil
+			}
+		}
+		return "", fmt.Errorf("Cubox app token not found. Log in to the Cubox.app, or set CUBOX_CTOKEN")
+	}
+	return "", fmt.Errorf("the web/app API group requires CUBOX_CTOKEN (Cubox.app login token) on this platform")
 }
