@@ -155,17 +155,148 @@ func runFolderArchive(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// ---- folder move ----
+
+var (
+	moveID    string
+	movePar   string
+	moveIndex int
+)
+
+var folderMoveCmd = &cobra.Command{
+	Use:   "move",
+	Short: "Move a folder under another parent (and/or reorder)",
+	Long: `Move a folder to a new parent, optionally at a specific index
+among the siblings (0-based, default: last).
+
+Implemented with the same endpoint the web app submits on drag & drop
+(POST /c/api/group/move/another): two order snapshots (fromGroups for the
+old siblings when moving across parents, toGroups for the new order under
+the destination parent) are built from the live tree.`,
+	Example: `  cubox-cli folder move --id 7230156249357091393 --parent 7507723518969122078
+  cubox-cli folder move --id 7230156249357091393 --parent 7507723518969122078 --index 0`,
+	RunE: runFolderMove,
+}
+
+func runFolderMove(cmd *cobra.Command, args []string) error {
+	if moveID == "" {
+		return fmt.Errorf("--id is required")
+	}
+	if movePar == "" {
+		return fmt.Errorf("--parent is required (moving to root is not supported yet)")
+	}
+	// moveIndex < 0 means "append last" — no explicit validation needed.
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	web, err := webClient(cfg)
+	if err != nil {
+		return err
+	}
+	groups, err := web.WebListGroups()
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]client.WebGroup, len(groups))
+	kids := map[string][]client.WebGroup{}
+	for _, g := range groups {
+		byID[g.GroupID] = g
+		p := ""
+		if g.ParentGroupID != nil {
+			p = *g.ParentGroupID
+		}
+		kids[p] = append(kids[p], g)
+	}
+	x, found := byID[moveID]
+	if !found {
+		return fmt.Errorf("folder %s does not exist", moveID)
+	}
+	if _, dst := byID[movePar]; !dst {
+		return fmt.Errorf("destination parent %s does not exist", movePar)
+	}
+	oldParent := ""
+	if x.ParentGroupID != nil {
+		oldParent = *x.ParentGroupID
+	}
+
+	// toGroups: destination siblings minus X, with X inserted at moveIndex.
+	to := make([]map[string]string, 0, len(kids[movePar])+1)
+	pos := 0
+	for _, k := range kids[movePar] {
+		if k.GroupID == moveID {
+			continue
+		}
+		if pos == moveIndex {
+			to = append(to, map[string]string{"groupId": moveID, "parentGroupId": movePar})
+			pos++
+		}
+		to = append(to, map[string]string{"groupId": k.GroupID, "parentGroupId": movePar})
+		pos++
+	}
+	if pos == moveIndex {
+		to = append(to, map[string]string{"groupId": moveID, "parentGroupId": movePar})
+	}
+
+	// fromGroups: old siblings minus X (only when moving across parents).
+	fromJSON := ""
+	if oldParent != movePar {
+		from := make([]map[string]string, 0, len(kids[oldParent]))
+		for _, k := range kids[oldParent] {
+			if k.GroupID == moveID {
+				continue
+			}
+			from = append(from, map[string]string{"groupId": k.GroupID, "parentGroupId": oldParent})
+		}
+		if len(from) > 0 {
+			b, _ := json.Marshal(from)
+			fromJSON = string(b)
+		}
+	}
+	tb, _ := json.Marshal(to)
+
+	raw, err := web.WebMoveFolderAnother(fromJSON, string(tb))
+	if err != nil {
+		return err
+	}
+
+	// Verify the move took effect.
+	after, err := web.WebListGroups()
+	if err != nil {
+		return err
+	}
+	moved := false
+	for _, g := range after {
+		if g.GroupID == moveID && g.ParentGroupID != nil && *g.ParentGroupID == movePar {
+			moved = true
+		}
+	}
+	printJSON(map[string]interface{}{
+		"message": map[bool]string{true: "folder moved", false: "move submitted but verification could not confirm the new parent"}[moved],
+		"id":      moveID,
+		"name":    x.GroupName,
+		"parent":  movePar,
+		"data":    jsonRaw(raw),
+	})
+	return nil
+}
+
 func init() {
 	folderCmd.AddCommand(folderListCmd)
 	folderCmd.AddCommand(folderDeleteCmd)
 	folderCmd.AddCommand(folderNewCmd)
 	folderCmd.AddCommand(folderRenameCmd)
 	folderCmd.AddCommand(folderArchiveCmd)
+	folderCmd.AddCommand(folderMoveCmd)
 	rootCmd.AddCommand(folderCmd)
 
 	folderArchiveCmd.Flags().StringSliceVar(&archIDs, "id", nil, "folder IDs to archive/unarchive (comma-separated, required)")
 	folderArchiveCmd.Flags().BoolVar(&archOn, "on", false, "archive the folders")
 	folderArchiveCmd.Flags().BoolVar(&archOff, "off", false, "unarchive the folders")
+
+	folderMoveCmd.Flags().StringVar(&moveID, "id", "", "folder ID to move (required)")
+	folderMoveCmd.Flags().StringVar(&movePar, "parent", "", "destination parent folder ID (required)")
+	folderMoveCmd.Flags().IntVar(&moveIndex, "index", -1, "position among destination siblings (0-based, default: last)")
 
 	folderDeleteCmd.Flags().StringSliceVar(&delIDs, "id", nil, "folder IDs to delete (comma-separated, required)")
 	folderDeleteCmd.Flags().BoolVar(&delDryRun, "dry-run", false, "show what would be deleted without deleting")

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/OLCUBO/cubox-cli/internal/config"
@@ -116,12 +117,50 @@ var accountInsightCmd = &cobra.Command{
 	},
 }
 
+var settingsJSON string
+
+var accountSettingsUpdateCmd = &cobra.Command{
+	Use:   "settings-update",
+	Short: "Write reading settings (experimental)",
+	Long: `Write reading settings back via POST /c/api/settings/read/update.
+
+Experimental: the payload shape is not fully documented — pass the FULL
+settings object as JSON (take the output of "account settings" as the base
+and modify the fields you want). Values sent are applied as-is.`,
+	Example: `  cubox-cli account settings-update --json '{"markAsReadConfig":1}'`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if settingsJSON == "" {
+			return fmt.Errorf("--json is required (full settings object)")
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal([]byte(settingsJSON), &body); err != nil {
+			return fmt.Errorf("parsing --json: %w", err)
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebSettingsUpdate(body)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "settings updated", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
 func init() {
 	accountCmd.AddCommand(accountApikeyCmd)
 	accountCmd.AddCommand(accountSettingsCmd)
+	accountCmd.AddCommand(accountSettingsUpdateCmd)
 	accountCmd.AddCommand(accountSyncCmd)
 	accountCmd.AddCommand(accountInsightCmd)
 	rootCmd.AddCommand(accountCmd)
 
 	accountInsightCmd.Flags().StringVar(&insightCardID, "card", "", "card ID (required)")
+	accountSettingsUpdateCmd.Flags().StringVar(&settingsJSON, "json", "", "full settings object as JSON (required)")
 }

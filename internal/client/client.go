@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -286,14 +287,37 @@ func (c *Client) WebUpdateFolder(id, name string) (json.RawMessage, error) {
 }
 
 // webPostForm posts application/x-www-form-urlencoded data with the bare
-// Authorization style used by the web/app group.
+// Authorization style used by the web/app group. Uses a longer timeout than
+// the default client: tree-reordering (move/another) can be slow server-side,
+// and a timed-out request may still have been applied.
 func (c *Client) webPostForm(path string, form url.Values) (json.RawMessage, error) {
 	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c.doRequestAuth(req, true)
+	slow := &http.Client{Timeout: 120 * time.Second}
+	resp, err := slow.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
+	}
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+	if apiResp.Code != 200 {
+		return nil, fmt.Errorf("API error %d: %s", apiResp.Code, apiResp.Message)
+	}
+	return apiResp.Data, nil
 }
 
 // WebMoveFolderCardsOut moves any remaining cards of a folder to
@@ -430,4 +454,74 @@ func (c *Client) WebReadingListAddItem(listID, cardID string, includeHighlight, 
 func (c *Client) WebReadingListRemoveItem(listID, cardID string) (json.RawMessage, error) {
 	return c.WebPostMultipart("/c/api/norm/lists/items/remove",
 		map[string]string{"listId": listID, "cardId": cardID})
+}
+
+// WebReadingListCreate creates a reading list (multipart: title/intro).
+func (c *Client) WebReadingListCreate(title, intro string) (json.RawMessage, error) {
+	f := map[string]string{"title": title}
+	if intro != "" {
+		f["intro"] = intro
+	}
+	return c.WebPostMultipart("/c/api/norm/reading-list/new", f)
+}
+
+// WebReadingListDelete deletes a reading list via DELETE /c/api/norm/reading-list/{id}.
+func (c *Client) WebReadingListDelete(id string) (json.RawMessage, error) {
+	req, err := http.NewRequest("DELETE", c.baseURL+"/c/api/norm/reading-list/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.doRequestAuth(req, true)
+}
+
+// WebSettingsUpdate writes reading settings back (experimental: the payload
+// must be the full settings object as returned by GET /c/api/settings/read).
+func (c *Client) WebSettingsUpdate(body map[string]interface{}) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/settings/read/update", body)
+}
+
+// WebCardsExportMail requests an async export of the given cards, delivered
+// by email. Form-urlencoded: cardIds (comma-joined) + email.
+func (c *Client) WebCardsExportMail(ids []string, email string) (json.RawMessage, error) {
+	form := url.Values{"cardIds": {strings.Join(ids, ",")}, "email": {email}}
+	return c.webPostForm("/c/api/norm/cards/export/async", form)
+}
+
+// WebMoveFolderAnother moves/reorders folders. fromJSON/toJSON are
+// JSON-stringified arrays of {groupId, parentGroupId} snapshots — the same
+// shape the web app submits on drag & drop. fromGroups may be "" for a
+// same-parent reorder. The endpoint expects form-urlencoded input.
+func (c *Client) WebMoveFolderAnother(fromJSON, toJSON string) (json.RawMessage, error) {
+	form := url.Values{"toGroups": {toJSON}}
+	if fromJSON != "" {
+		form.Set("fromGroups", fromJSON)
+	}
+	return c.webPostForm("/c/api/group/move/another", form)
+}
+
+// WebInsightGenerateStream triggers AI insight generation for a card and
+// streams the SSE response line by line. Uses a dedicated client without the
+// 30s timeout because generation can run long.
+func (c *Client) WebInsightGenerateStream(cardID string, onLine func(string)) error {
+	req, err := http.NewRequest("GET",
+		c.baseURL+"/c/api/card/insight/generate/stream?cardId="+url.QueryEscape(cardID), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", c.token) // bare, web/app group
+	req.Header.Set("Accept", "text/event-stream")
+	streamClient := &http.Client{}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		if line := scanner.Text(); line != "" {
+			onLine(line)
+		}
+	}
+	return scanner.Err()
 }

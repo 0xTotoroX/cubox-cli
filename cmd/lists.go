@@ -96,12 +96,73 @@ var listsRemoveItemCmd = &cobra.Command{
 	},
 }
 
+var (
+	newTitle string
+	newIntro string
+	delList  string
+)
+
+var listsNewCmd = &cobra.Command{
+	Use:   "new",
+	Short: "Create a reading list",
+	Example: `  cubox-cli lists new --title "AI Weekly" --intro "Curated picks"`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if newTitle == "" {
+			return fmt.Errorf("--title is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListCreate(newTitle, newIntro)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "reading list created", "title": newTitle, "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete a reading list",
+	Example: `  cubox-cli lists delete --list 7123...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if delList == "" {
+			return fmt.Errorf("--list is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListDelete(delList)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "reading list deleted", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
 func init() {
 	listsCmd.AddCommand(listsListCmd)
+	listsCmd.AddCommand(listsNewCmd)
+	listsCmd.AddCommand(listsDeleteCmd)
 	listsCmd.AddCommand(listsAddItemCmd)
 	listsCmd.AddCommand(listsRemoveItemCmd)
 	rootCmd.AddCommand(listsCmd)
 
+	listsNewCmd.Flags().StringVar(&newTitle, "title", "", "reading list title (required)")
+	listsNewCmd.Flags().StringVar(&newIntro, "intro", "", "reading list intro (optional)")
+	listsDeleteCmd.Flags().StringVar(&delList, "list", "", "reading list ID (required)")
 	listsAddItemCmd.Flags().StringVar(&addListID, "list", "", "reading list ID (required)")
 	listsAddItemCmd.Flags().StringVar(&addCardID, "card", "", "card ID (required)")
 	listsAddItemCmd.Flags().BoolVar(&addHl, "highlight", false, "include highlights")

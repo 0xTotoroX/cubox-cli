@@ -67,10 +67,52 @@ var exportBookmarksCmd = &cobra.Command{
 	},
 }
 
+var (
+	mailIDs  []string
+	mailAddr string
+)
+
+var exportMailCmd = &cobra.Command{
+	Use:   "mail",
+	Short: "Export selected cards by email (async)",
+	Long: `Request an async export of the given cards; Cubox emails the export
+file to the address you provide.`,
+	Example: `  cubox-cli export mail --email me@example.com --card 7435...,7436...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(mailIDs) == 0 {
+			return fmt.Errorf("--card is required")
+		}
+		if mailAddr == "" {
+			return fmt.Errorf("--email is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebCardsExportMail(mailIDs, mailAddr)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{
+			"message": fmt.Sprintf("export of %d card(s) requested — check your inbox at %s", len(mailIDs), mailAddr),
+			"data":    jsonRaw(raw),
+		})
+		return nil
+	},
+}
+
 func init() {
 	exportCmd.AddCommand(exportStatusCmd)
 	exportCmd.AddCommand(exportBookmarksCmd)
+	exportCmd.AddCommand(exportMailCmd)
 	rootCmd.AddCommand(exportCmd)
+
+	exportMailCmd.Flags().StringSliceVar(&mailIDs, "card", nil, "card IDs to export (comma-separated, required)")
+	exportMailCmd.Flags().StringVar(&mailAddr, "email", "", "email address to receive the export (required)")
 }
 
 var _ = fmt.Sprintf
