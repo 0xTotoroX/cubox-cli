@@ -80,12 +80,92 @@ var folderRenameCmd = &cobra.Command{
 	RunE: runFolderRename,
 }
 
+// ---- folder archive ----
+
+var (
+	archIDs []string
+	archOn  bool
+	archOff bool
+)
+
+var folderArchiveCmd = &cobra.Command{
+	Use:   "archive",
+	Short: "Archive or unarchive folders",
+	Long: `Archive or unarchive folders by ID.
+
+Archiving a folder also archives all cards and sub-folders inside it
+(the Cubox app applies the same cascade). Provide exactly one of
+--on / --off.`,
+	RunE: runFolderArchive,
+}
+
+func runFolderArchive(cmd *cobra.Command, args []string) error {
+	if len(archIDs) == 0 {
+		return fmt.Errorf("--id is required")
+	}
+	if archOn == archOff {
+		return fmt.Errorf("provide exactly one of --on / --off")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	web, err := webClient(cfg)
+	if err != nil {
+		return err
+	}
+	groups, err := web.WebListGroups()
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]client.WebGroup, len(groups))
+	for _, g := range groups {
+		byID[g.GroupID] = g
+	}
+
+	type result struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		OK      bool   `json:"ok"`
+		Message string `json:"message,omitempty"`
+	}
+	var results []result
+	okCount := 0
+	for _, id := range archIDs {
+		name := "(unknown)"
+		if g, found := byID[id]; found {
+			name = g.GroupName
+		}
+		raw, err := web.WebArchiveFolder(id, archOn)
+		_ = raw
+		if err != nil {
+			_, msg := parseAPIError(err)
+			results = append(results, result{ID: id, Name: name, OK: false, Message: msg})
+			continue
+		}
+		okCount++
+		results = append(results, result{ID: id, Name: name, OK: true})
+	}
+	printJSON(map[string]interface{}{
+		"count":   okCount,
+		"total":   len(archIDs),
+		"mode":    map[bool]string{true: "archive", false: "unarchive"}[archOn],
+		"results": results,
+	})
+	return nil
+}
+
 func init() {
 	folderCmd.AddCommand(folderListCmd)
 	folderCmd.AddCommand(folderDeleteCmd)
 	folderCmd.AddCommand(folderNewCmd)
 	folderCmd.AddCommand(folderRenameCmd)
+	folderCmd.AddCommand(folderArchiveCmd)
 	rootCmd.AddCommand(folderCmd)
+
+	folderArchiveCmd.Flags().StringSliceVar(&archIDs, "id", nil, "folder IDs to archive/unarchive (comma-separated, required)")
+	folderArchiveCmd.Flags().BoolVar(&archOn, "on", false, "archive the folders")
+	folderArchiveCmd.Flags().BoolVar(&archOff, "off", false, "unarchive the folders")
 
 	folderDeleteCmd.Flags().StringSliceVar(&delIDs, "id", nil, "folder IDs to delete (comma-separated, required)")
 	folderDeleteCmd.Flags().BoolVar(&delDryRun, "dry-run", false, "show what would be deleted without deleting")

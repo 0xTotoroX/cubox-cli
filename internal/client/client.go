@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -306,4 +308,126 @@ func (c *Client) WebMoveFolderCardsOut(id string) (json.RawMessage, error) {
 // Prefer WebMoveFolderCardsOut unless you know the folder is empty.
 func (c *Client) WebDeleteFolder(id string) (json.RawMessage, error) {
 	return c.webRequest("POST", "/c/api/group/delete/"+id, nil)
+}
+
+// WebArchiveFolder archives or unarchives a folder via POST /c/api/group/update.
+func (c *Client) WebArchiveFolder(id string, archive bool) (json.RawMessage, error) {
+	form := url.Values{"groupId": {id}, "archiving": {fmt.Sprintf("%v", archive)}}
+	return c.webPostForm("/c/api/group/update", form)
+}
+
+// WebGetRaw performs a bare-auth GET and returns the parsed {code,message,data}
+// envelope. Useful for endpoints whose payload shape varies.
+func (c *Client) WebGetRaw(path string) (json.RawMessage, error) {
+	req, err := http.NewRequest("GET", c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.doRequestAuth(req, true)
+}
+
+// WebPostRaw performs a bare-auth POST with a pre-built JSON body.
+func (c *Client) WebPostRaw(path string, body interface{}) (json.RawMessage, error) {
+	return c.webRequest("POST", path, body)
+}
+
+// WebPostMultipart posts multipart/form-data with the bare auth style
+// (used by the reading-list endpoints).
+func (c *Client) WebPostMultipart(path string, fields map[string]string) (json.RawMessage, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err := w.WriteField(k, fields[k]); err != nil {
+			return nil, err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", c.baseURL+path, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	return c.doRequestAuth(req, true)
+}
+
+// ---- Recycle bin (web group) ----
+
+// WebRecycleList lists cards in the recycle bin.
+func (c *Client) WebRecycleList(page int) (json.RawMessage, error) {
+	return c.WebGetRaw(fmt.Sprintf("/c/api/norm/card/recycle/list?page=%d", page))
+}
+
+// webSearchEngineIDs encodes card ids the way the recycle endpoints expect:
+// a JSON-stringified array of {userSearchEngineID} objects.
+func webSearchEngineIDs(ids []string) string {
+	type se struct {
+		UserSearchEngineID string `json:"userSearchEngineID"`
+	}
+	arr := make([]se, 0, len(ids))
+	for _, id := range ids {
+		arr = append(arr, se{UserSearchEngineID: id})
+	}
+	b, _ := json.Marshal(arr)
+	return string(b)
+}
+
+// WebRecycleRecover restores cards from the recycle bin.
+func (c *Client) WebRecycleRecover(ids []string) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/search_engines/recycle/recover",
+		map[string]string{"searchEngines": webSearchEngineIDs(ids)})
+}
+
+// WebRecycleClean permanently removes cards from the recycle bin.
+func (c *Client) WebRecycleClean(ids []string) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/search_engines/recycle/clean",
+		map[string]string{"searchEngines": webSearchEngineIDs(ids)})
+}
+
+// ---- Marks (highlights, web group) ----
+
+// WebMarksList lists highlights via GET /c/api/norm/mark/list.
+func (c *Client) WebMarksList(page int, keyword string) (json.RawMessage, error) {
+	q := fmt.Sprintf("page=%d", page)
+	if keyword != "" {
+		q += "&keyword=" + url.QueryEscape(keyword)
+	}
+	return c.WebGetRaw("/c/api/norm/mark/list?" + q)
+}
+
+// WebMarksDelete deletes highlights via POST /c/api/marks/delete.
+func (c *Client) WebMarksDelete(ids []string) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/marks/delete", map[string]string{"ids": strings.Join(ids, ",")})
+}
+
+// WebMarksColor updates highlight colors via POST /c/api/marks/color/update.
+func (c *Client) WebMarksColor(ids []string, color int) (json.RawMessage, error) {
+	return c.webRequest("POST", "/c/api/marks/color/update",
+		map[string]interface{}{"ids": strings.Join(ids, ","), "colorType": color})
+}
+
+// ---- Reading lists (web group, multipart) ----
+
+// WebReadingLists lists reading lists via GET /c/api/norm/reading-list/my.
+func (c *Client) WebReadingLists() (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/norm/reading-list/my")
+}
+
+// WebReadingListAddItem adds a card to a reading list.
+func (c *Client) WebReadingListAddItem(listID, cardID string, includeHighlight, includeNote bool) (json.RawMessage, error) {
+	f := map[string]string{"listId": listID, "cardId": cardID,
+		"includeHighlight": fmt.Sprintf("%v", includeHighlight), "includeNote": fmt.Sprintf("%v", includeNote)}
+	return c.WebPostMultipart("/c/api/norm/lists/items/add", f)
+}
+
+// WebReadingListRemoveItem removes a card from a reading list.
+func (c *Client) WebReadingListRemoveItem(listID, cardID string) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/lists/items/remove",
+		map[string]string{"listId": listID, "cardId": cardID})
 }
