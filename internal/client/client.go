@@ -525,3 +525,66 @@ func (c *Client) WebInsightGenerateStream(cardID string, onLine func(string)) er
 	}
 	return scanner.Err()
 }
+
+// WebAIAsk asks the Cubox AI assistant a question and streams the answer.
+//
+// POST /c/api/ai/ask, form-urlencoded (question, optional context for
+// card-scoped Q&A, optional collectId), SSE response in OpenAI delta format
+// (data: {"choices":[{"delta":{"content":"..."}}]}, terminated by [DONE]).
+// context mirrors the in-card Q&A; collectId mirrors the assistant panel.
+func (c *Client) WebAIAsk(question, context, collectID string, onDelta func(string)) error {
+	form := url.Values{"question": {question}}
+	if context != "" {
+		form.Set("context", context)
+	}
+	if collectID != "" {
+		form.Set("collectId", collectID)
+	}
+	req, err := http.NewRequest("POST", c.baseURL+"/c/api/ai/ask",
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", c.token) // bare, web/app group
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "*/*")
+	streamClient := &http.Client{}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" {
+			continue
+		}
+		if payload == "[DONE]" {
+			return nil
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			onDelta(payload) // non-delta payload: pass through
+			continue
+		}
+		for _, ch := range chunk.Choices {
+			if ch.Delta.Content != "" {
+				onDelta(ch.Delta.Content)
+			}
+		}
+	}
+	return scanner.Err()
+}

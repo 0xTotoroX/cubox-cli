@@ -43,6 +43,10 @@ cubox-cli account insight --card CARD_ID   # a card's AI insight
 
 # AI
 cubox-cli ai generate --card CARD_ID   # stream AI insight generation (SSE; consumes AI quota)
+cubox-cli ai ask --question Q [--context TEXT]   # ⚠ experimental: endpoint verified
+                                       # (POST, form-urlencoded, OpenAI-delta SSE)
+                                       # but the required field set is not fully
+                                       # mapped yet — needs one live request capture
 ```
 
 - `folder delete` defaults to **safe mode**: remaining cards are first moved to
