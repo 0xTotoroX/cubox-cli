@@ -152,21 +152,230 @@ var listsDeleteCmd = &cobra.Command{
 	},
 }
 
+// ---- extra reading-list operations ----
+
+var (
+	updListID string
+	updTitle  string
+	updIntro  string
+	pubListID string
+	pubOn     bool
+	pubOff    bool
+	colListID string
+	colCardID string
+	clAllID   string
+	sortList  string
+	sortIDs   []string
+	checkIDs  []string
+	listPage  int
+	listSize  int
+)
+
+var listsUpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update a reading list title/intro",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if updListID == "" || (updTitle == "" && updIntro == "") {
+			return fmt.Errorf("--list and at least one of --title/--intro are required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListUpdate(updListID, updTitle, updIntro)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "reading list updated", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsPublishCmd = &cobra.Command{
+	Use:   "publish",
+	Short: "Publish/unpublish a reading list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if pubListID == "" || (pubOn == pubOff) {
+			return fmt.Errorf("--list and exactly one of --on/--off are required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListPublish(pubListID, pubOn)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": map[bool]string{true: "published", false: "unpublished"}[pubOn], "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsCollectCmd = &cobra.Command{
+	Use:   "collect",
+	Short: "Collect a card into a reading list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if colListID == "" || colCardID == "" {
+			return fmt.Errorf("--list and --card are required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListCollect(colListID, colCardID)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "card collected", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsCollectAllCmd = &cobra.Command{
+	Use:   "collect-all",
+	Short: "Trigger collecting the full list content",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if clAllID == "" {
+			return fmt.Errorf("--list is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListCollectAll(clAllID)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "collect-all triggered", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsCardsCmd = &cobra.Command{
+	Use:   "cards",
+	Short: "List the cards inside a reading list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if sortList == "" {
+			return fmt.Errorf("--list is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebReadingListCards(sortList, listPage, listSize)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
+var listsSortCmd = &cobra.Command{
+	Use:   "sort",
+	Short: "Reorder the cards of a reading list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if sortList == "" || len(sortIDs) == 0 {
+			return fmt.Errorf("--list and --card are required (full ordered card ID list)")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebListsItemsSort(sortList, sortIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "items sorted", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var listsCheckCmd = &cobra.Command{
+	Use:   "check",
+	Short: "Report which reading lists contain the given cards",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(checkIDs) == 0 {
+			return fmt.Errorf("--card is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebListsCheck(checkIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
 func init() {
 	listsCmd.AddCommand(listsListCmd)
 	listsCmd.AddCommand(listsNewCmd)
 	listsCmd.AddCommand(listsDeleteCmd)
+	listsCmd.AddCommand(listsUpdateCmd)
+	listsCmd.AddCommand(listsPublishCmd)
 	listsCmd.AddCommand(listsAddItemCmd)
 	listsCmd.AddCommand(listsRemoveItemCmd)
+	listsCmd.AddCommand(listsCollectCmd)
+	listsCmd.AddCommand(listsCollectAllCmd)
+	listsCmd.AddCommand(listsCardsCmd)
+	listsCmd.AddCommand(listsSortCmd)
+	listsCmd.AddCommand(listsCheckCmd)
 	rootCmd.AddCommand(listsCmd)
 
 	listsNewCmd.Flags().StringVar(&newTitle, "title", "", "reading list title (required)")
 	listsNewCmd.Flags().StringVar(&newIntro, "intro", "", "reading list intro (optional)")
 	listsDeleteCmd.Flags().StringVar(&delList, "list", "", "reading list ID (required)")
+	listsUpdateCmd.Flags().StringVar(&updListID, "list", "", "reading list ID (required)")
+	listsUpdateCmd.Flags().StringVar(&updTitle, "title", "", "new title")
+	listsUpdateCmd.Flags().StringVar(&updIntro, "intro", "", "new intro")
+	listsPublishCmd.Flags().StringVar(&pubListID, "list", "", "reading list ID (required)")
+	listsPublishCmd.Flags().BoolVar(&pubOn, "on", false, "publish")
+	listsPublishCmd.Flags().BoolVar(&pubOff, "off", false, "unpublish")
 	listsAddItemCmd.Flags().StringVar(&addListID, "list", "", "reading list ID (required)")
 	listsAddItemCmd.Flags().StringVar(&addCardID, "card", "", "card ID (required)")
 	listsAddItemCmd.Flags().BoolVar(&addHl, "highlight", false, "include highlights")
 	listsAddItemCmd.Flags().BoolVar(&addNote, "note", false, "include notes")
 	listsRemoveItemCmd.Flags().StringVar(&rmListID, "list", "", "reading list ID (required)")
 	listsRemoveItemCmd.Flags().StringVar(&rmCardID, "card", "", "card ID (required)")
+	listsCollectCmd.Flags().StringVar(&colListID, "list", "", "reading list ID (required)")
+	listsCollectCmd.Flags().StringVar(&colCardID, "card", "", "card ID (required)")
+	listsCollectAllCmd.Flags().StringVar(&clAllID, "list", "", "reading list ID (required)")
+	listsCardsCmd.Flags().StringVar(&sortList, "list", "", "reading list ID (required)")
+	listsCardsCmd.Flags().IntVar(&listPage, "page", 1, "page number (1-based)")
+	listsCardsCmd.Flags().IntVar(&listSize, "size", 20, "page size")
+	listsSortCmd.Flags().StringVar(&sortList, "list", "", "reading list ID (required)")
+	listsSortCmd.Flags().StringSliceVar(&sortIDs, "card", nil, "full ordered card ID list (required)")
+	listsCheckCmd.Flags().StringSliceVar(&checkIDs, "card", nil, "card IDs (comma-separated, required)")
 }

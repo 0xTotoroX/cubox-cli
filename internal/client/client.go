@@ -9,6 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -404,14 +406,206 @@ func webSearchEngineIDs(ids []string) string {
 
 // WebRecycleRecover restores cards from the recycle bin.
 func (c *Client) WebRecycleRecover(ids []string) (json.RawMessage, error) {
-	return c.webRequest("POST", "/c/api/search_engines/recycle/recover",
-		map[string]string{"searchEngines": webSearchEngineIDs(ids)})
+	return c.webPostForm("/c/api/search_engines/recycle/recover",
+		url.Values{"searchEngines": {webSearchEngineIDs(ids)}})
 }
 
 // WebRecycleClean permanently removes cards from the recycle bin.
 func (c *Client) WebRecycleClean(ids []string) (json.RawMessage, error) {
-	return c.webRequest("POST", "/c/api/search_engines/recycle/clean",
-		map[string]string{"searchEngines": webSearchEngineIDs(ids)})
+	return c.webPostForm("/c/api/search_engines/recycle/clean",
+		url.Values{"searchEngines": {webSearchEngineIDs(ids)}})
+}
+
+// WebMarksDelete deletes highlights via POST /c/api/marks/delete.
+func (c *Client) WebMarksDelete(ids []string) (json.RawMessage, error) {
+	return c.webPostForm("/c/api/marks/delete", url.Values{"ids": {strings.Join(ids, ",")}})
+}
+
+// WebMarksColor updates highlight colors via POST /c/api/marks/color/update.
+func (c *Client) WebMarksColor(ids []string, color int) (json.RawMessage, error) {
+	return c.webPostForm("/c/api/marks/color/update",
+		url.Values{"ids": {strings.Join(ids, ",")}, "colorType": {fmt.Sprintf("%d", color)}})
+}
+
+// WebMarksExport exports highlights via POST /c/api/norm/marks/export.
+// Either slice may be empty (the field is omitted then).
+func (c *Client) WebMarksExport(cardIDs, markIDs []string) (json.RawMessage, error) {
+	form := url.Values{}
+	if len(cardIDs) > 0 {
+		form.Set("cardIds", strings.Join(cardIDs, ","))
+	}
+	if len(markIDs) > 0 {
+		form.Set("markIds", strings.Join(markIDs, ","))
+	}
+	return c.webPostForm("/c/api/norm/marks/export", form)
+}
+
+// WebMarksExportText exports highlights as plain text.
+func (c *Client) WebMarksExportText(cardIDs, markIDs []string) (json.RawMessage, error) {
+	form := url.Values{}
+	if len(cardIDs) > 0 {
+		form.Set("cardIds", strings.Join(cardIDs, ","))
+	}
+	if len(markIDs) > 0 {
+		form.Set("markIds", strings.Join(markIDs, ","))
+	}
+	return c.webPostForm("/c/api/norm/marks/export/text", form)
+}
+
+// WebMarkCount returns the total mark count.
+func (c *Client) WebMarkCount() (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/mark/count")
+}
+
+// ---- Batch card operations (web group, form with comma-joined cardIds) ----
+
+// WebCardsStar stars/unstars cards in batch.
+func (c *Client) WebCardsStar(ids []string, star bool) (json.RawMessage, error) {
+	return c.webPostForm("/c/api/norm/cards/updateToStarTarget",
+		url.Values{"cardIds": {strings.Join(ids, ",")}, "starTarget": {fmt.Sprintf("%v", star)}})
+}
+
+// WebCardsRead marks cards as read in batch.
+func (c *Client) WebCardsRead(ids []string) (json.RawMessage, error) {
+	return c.webPostForm("/c/api/norm/card/read", url.Values{"cardIds": {strings.Join(ids, ",")}})
+}
+
+// WebCardsMove moves cards to a folder in batch.
+func (c *Client) WebCardsMove(ids []string, groupID string) (json.RawMessage, error) {
+	return c.webPostForm("/c/api/norm/cards/moveToGroup/"+groupID,
+		url.Values{"groupId": {groupID}, "cardIds": {strings.Join(ids, ",")}})
+}
+
+// WebCardsAddTagsByName adds tags (by name) to cards in batch, optionally
+// removing tag ids from them.
+func (c *Client) WebCardsAddTagsByName(ids []string, addNames []string, deleteTagIDs []string) (json.RawMessage, error) {
+	addJSON := "[]"
+	if len(addNames) > 0 {
+		b, _ := json.Marshal(addNames)
+		addJSON = string(b)
+	}
+	form := url.Values{
+		"cardIds":           {strings.Join(ids, ",")},
+		"addLinkedTagNames": {addJSON},
+	}
+	if len(deleteTagIDs) > 0 {
+		form.Set("deleteTagIds", strings.Join(deleteTagIDs, ","))
+	}
+	return c.webPostForm("/c/api/norm/cards/updateTagsForName", form)
+}
+
+// ---- Tags (web group) ----
+
+// WebTagNew creates a tag via POST /c/api/v2/tag/new.
+// parentID may be empty for a root-level tag. linkedName is the leaf name.
+func (c *Client) WebTagNew(linkedName, parentID string) (json.RawMessage, error) {
+	form := url.Values{"linkedName": {linkedName}}
+	if parentID != "" {
+		form.Set("parentId", parentID)
+	}
+	return c.webPostForm("/c/api/v2/tag/new", form)
+}
+
+// ---- Reading lists: extra operations ----
+
+// WebReadingListUpdate updates a reading list title/intro (multipart).
+func (c *Client) WebReadingListUpdate(id, title, intro string) (json.RawMessage, error) {
+	f := map[string]string{"id": id}
+	if title != "" {
+		f["title"] = title
+	}
+	if intro != "" {
+		f["intro"] = intro
+	}
+	return c.WebPostMultipart("/c/api/norm/reading-list/update", f)
+}
+
+// WebReadingListPublish publishes/unpublishes a reading list (multipart).
+func (c *Client) WebReadingListPublish(id string, published bool) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/reading-list/publish",
+		map[string]string{"id": id, "published": fmt.Sprintf("%v", published)})
+}
+
+// WebReadingListCollect collects a card into a reading list (multipart).
+func (c *Client) WebReadingListCollect(listID, cardID string) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/reading-list/collect",
+		map[string]string{"id": listID, "cardId": cardID})
+}
+
+// WebReadingListCollectAll collects all listed cards at once (multipart).
+func (c *Client) WebReadingListCollectAll(listID string) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/reading-list/collect/all",
+		map[string]string{"id": listID})
+}
+
+// WebReadingListCards lists the cards of a reading list.
+func (c *Client) WebReadingListCards(id string, page, size int) (json.RawMessage, error) {
+	return c.WebGetRaw(fmt.Sprintf("/c/api/norm/reading-list/%s/cards?page=%d&size=%d",
+		url.QueryEscape(id), page, size))
+}
+
+// WebListsItemsSort reorders items of a reading list (multipart).
+func (c *Client) WebListsItemsSort(listID string, cardIDs []string) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/lists/items/sort",
+		map[string]string{"listId": listID, "cardIds": strings.Join(cardIDs, ",")})
+}
+
+// WebListsCheck reports which reading lists contain the given cards.
+func (c *Client) WebListsCheck(cardIDs []string) (json.RawMessage, error) {
+	return c.WebPostMultipart("/c/api/norm/lists/items/check-list",
+		map[string]string{"cardIds": strings.Join(cardIDs, ",")})
+}
+
+// ---- Account extras ----
+
+// WebMailSettings returns the Mail Drop (email-in) settings.
+func (c *Client) WebMailSettings() (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/v2/user/mail/settings/info?tagDetail=true")
+}
+
+// WebInsightState returns the AI insight generation state of a card.
+func (c *Client) WebInsightState(cardID string) (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/card/insight/state/" + cardID)
+}
+
+// WebInsightMoreQAs returns follow-up Q&As of a card's insight.
+func (c *Client) WebInsightMoreQAs(cardID string) (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/card/insight/moreQas/" + cardID)
+}
+
+// ---- Import (web group) ----
+
+// WebBookmarkImport uploads a bookmarks export file (HTML/Netscape) through
+// the official import task pipeline. Experimental: the multipart file field
+// name is inferred from the app ("uploadFile").
+func (c *Client) WebBookmarkImport(filePath string) (json.RawMessage, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("uploadFile", filepath.Base(filePath))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", c.baseURL+"/c/api/v2/bookmark/import", &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	return c.doRequestAuth(req, true)
+}
+
+// WebImportProgress returns the progress of the latest import task.
+func (c *Client) WebImportProgress() (json.RawMessage, error) {
+	return c.WebGetRaw("/c/api/importTask/progress")
 }
 
 // ---- Marks (highlights, web group) ----
@@ -423,17 +617,6 @@ func (c *Client) WebMarksList(page int, keyword string) (json.RawMessage, error)
 		q += "&keyword=" + url.QueryEscape(keyword)
 	}
 	return c.WebGetRaw("/c/api/norm/mark/list?" + q)
-}
-
-// WebMarksDelete deletes highlights via POST /c/api/marks/delete.
-func (c *Client) WebMarksDelete(ids []string) (json.RawMessage, error) {
-	return c.webRequest("POST", "/c/api/marks/delete", map[string]string{"ids": strings.Join(ids, ",")})
-}
-
-// WebMarksColor updates highlight colors via POST /c/api/marks/color/update.
-func (c *Client) WebMarksColor(ids []string, color int) (json.RawMessage, error) {
-	return c.webRequest("POST", "/c/api/marks/color/update",
-		map[string]interface{}{"ids": strings.Join(ids, ","), "colorType": color})
 }
 
 // ---- Reading lists (web group, multipart) ----
@@ -476,8 +659,13 @@ func (c *Client) WebReadingListDelete(id string) (json.RawMessage, error) {
 
 // WebSettingsUpdate writes reading settings back (experimental: the payload
 // must be the full settings object as returned by GET /c/api/settings/read).
+// The web group parses form-encoded bodies, so values are stringified.
 func (c *Client) WebSettingsUpdate(body map[string]interface{}) (json.RawMessage, error) {
-	return c.webRequest("POST", "/c/api/settings/read/update", body)
+	form := url.Values{}
+	for k, v := range body {
+		form.Set(k, fmt.Sprintf("%v", v))
+	}
+	return c.webPostForm("/c/api/settings/read/update", form)
 }
 
 // WebCardsExportMail requests an async export of the given cards, delivered

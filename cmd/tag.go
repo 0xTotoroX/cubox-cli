@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -72,6 +73,74 @@ Examples:
 	RunE: runTagMerge,
 }
 
+// ---- tag new / sort (web/app group) ----
+
+var (
+	tagNewName   string
+	tagNewParent string
+	tagSortJSON  string
+)
+
+var tagNewCmd = &cobra.Command{
+	Use:   "new",
+	Short: "Create a tag",
+	Long: `Create a tag by name (the leaf name; created on the fly by the app
+when tagging too, but this creates it standalone). --parent takes a tag ID
+for nesting.`,
+	Example: `  cubox-cli tag new --name ai
+  cubox-cli tag new --name llm --parent 7123...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if tagNewName == "" {
+			return fmt.Errorf("--name is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebTagNew(tagNewName, tagNewParent)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "tag created", "name": tagNewName, "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var tagSortCmd = &cobra.Command{
+	Use:   "sort",
+	Short: "Reorder tags (experimental)",
+	Long: `Reorder tags. Experimental: pass the order payload as JSON — the same
+shape the web app submits on tag drag & drop.`,
+	Example: `  cubox-cli tag sort --json '{"tagId":"7123...","order":["7123...","7456..."]}'`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if tagSortJSON == "" {
+			return fmt.Errorf("--json is required")
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal([]byte(tagSortJSON), &body); err != nil {
+			return fmt.Errorf("parsing --json: %w", err)
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebPostRaw("/c/api/tag/sort", body)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "tags sorted", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
 func init() {
 	tagUpdateCmd.Flags().StringVar(&tagUpdateID, "id", "", "tag ID to rename (required)")
 	tagUpdateCmd.MarkFlagRequired("id")
@@ -86,7 +155,11 @@ func init() {
 	tagMergeCmd.Flags().StringVar(&tagMergeTargetID, "target", "", "target tag ID to merge into (required)")
 	tagMergeCmd.MarkFlagRequired("target")
 
-	tagCmd.AddCommand(tagListCmd, tagUpdateCmd, tagDeleteCmd, tagMergeCmd)
+	tagNewCmd.Flags().StringVar(&tagNewName, "name", "", "tag name (required)")
+	tagNewCmd.Flags().StringVar(&tagNewParent, "parent", "", "parent tag ID for nesting (optional)")
+	tagSortCmd.Flags().StringVar(&tagSortJSON, "json", "", "sort payload as JSON (required, experimental)")
+
+	tagCmd.AddCommand(tagListCmd, tagUpdateCmd, tagDeleteCmd, tagMergeCmd, tagNewCmd, tagSortCmd)
 	rootCmd.AddCommand(tagCmd)
 }
 

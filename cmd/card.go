@@ -113,8 +113,148 @@ func init() {
 	cardRagCmd.Flags().StringVar(&cardRagQuery, "query", "", "natural language query text (required)")
 	cardRagCmd.MarkFlagRequired("query")
 
-	cardCmd.AddCommand(cardListCmd, cardDetailCmd, cardRagCmd)
+	cardCmd.AddCommand(cardListCmd, cardDetailCmd, cardRagCmd, cardStarCmd, cardReadCmd, cardMoveCmd, cardTagCmd)
 	rootCmd.AddCommand(cardCmd)
+}
+
+// ---- batch card operations (web/app group) ----
+
+var (
+	batchIDs    []string
+	starOn      bool
+	starOff     bool
+	moveTarget  string
+	tagAddNames []string
+	tagDelIDs   []string
+)
+
+var cardStarCmd = &cobra.Command{
+	Use:   "star",
+	Short: "Star/unstar cards in batch",
+	Long: `Batch-star or batch-unstar cards. Provide exactly one of --on / --off.`,
+	Example: `  cubox-cli card star --id 7435...,7436... --on`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(batchIDs) == 0 {
+			return fmt.Errorf("--id is required")
+		}
+		if starOn == starOff {
+			return fmt.Errorf("provide exactly one of --on / --off")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebCardsStar(batchIDs, starOn)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"count": len(batchIDs), "star": starOn, "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var cardReadCmd = &cobra.Command{
+	Use:   "read",
+	Short: "Mark cards as read in batch",
+	Example: `  cubox-cli card read --id 7435...,7436...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(batchIDs) == 0 {
+			return fmt.Errorf("--id is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebCardsRead(batchIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"count": len(batchIDs), "message": "cards marked as read", "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var cardMoveCmd = &cobra.Command{
+	Use:   "move",
+	Short: "Move cards to a folder in batch",
+	Example: `  cubox-cli card move --id 7435...,7436... --folder-id 7230156249357091393`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(batchIDs) == 0 {
+			return fmt.Errorf("--id is required")
+		}
+		if moveTarget == "" {
+			return fmt.Errorf("--folder-id is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebCardsMove(batchIDs, moveTarget)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"count": len(batchIDs), "folder": moveTarget, "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+var cardTagCmd = &cobra.Command{
+	Use:   "tag",
+	Short: "Add tags (by name) to cards in batch",
+	Long: `Batch-add tags by name to cards, optionally removing tag IDs.
+
+Note: --add uses tag NAMES (created on the fly if missing, like the app);
+--delete-tag-ids takes tag IDs.`,
+	Example: `  cubox-cli card tag --id 7435...,7436... --add ai,llm --delete-tag-ids 7123...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(batchIDs) == 0 {
+			return fmt.Errorf("--id is required")
+		}
+		if len(tagAddNames) == 0 && len(tagDelIDs) == 0 {
+			return fmt.Errorf("provide --add and/or --delete-tag-ids")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebCardsAddTagsByName(batchIDs, tagAddNames, tagDelIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"count": len(batchIDs), "add": tagAddNames, "data": jsonRaw(raw)})
+		return nil
+	},
+}
+
+func init() {
+	cardStarCmd.Flags().StringSliceVar(&batchIDs, "id", nil, "card IDs (comma-separated, required)")
+	cardStarCmd.Flags().BoolVar(&starOn, "on", false, "star the cards")
+	cardStarCmd.Flags().BoolVar(&starOff, "off", false, "unstar the cards")
+
+	cardReadCmd.Flags().StringSliceVar(&batchIDs, "id", nil, "card IDs (comma-separated, required)")
+
+	cardMoveCmd.Flags().StringSliceVar(&batchIDs, "id", nil, "card IDs (comma-separated, required)")
+	cardMoveCmd.Flags().StringVar(&moveTarget, "folder-id", "", "destination folder ID (required)")
+
+	cardTagCmd.Flags().StringSliceVar(&batchIDs, "id", nil, "card IDs (comma-separated, required)")
+	cardTagCmd.Flags().StringSliceVar(&tagAddNames, "add", nil, "tag names to add (comma-separated)")
+	cardTagCmd.Flags().StringSliceVar(&tagDelIDs, "delete-tag-ids", nil, "tag IDs to remove (comma-separated)")
 }
 
 func buildCardFilterRequest() (*client.CardFilterRequest, error) {

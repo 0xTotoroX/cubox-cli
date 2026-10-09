@@ -153,14 +153,91 @@ and modify the fields you want). Values sent are applied as-is.`,
 	},
 }
 
+var insightStateCard string
+var moreQasCard string
+
+var accountMailCmd = &cobra.Command{
+	Use:   "mail",
+	Short: "Show Mail Drop (email-in) settings",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebMailSettings()
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
+var accountInsightStateCmd = &cobra.Command{
+	Use:   "insight-state",
+	Short: "Show a card's AI insight generation state",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if insightStateCard == "" {
+			return fmt.Errorf("--card is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebInsightState(insightStateCard)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
+var accountMoreQAsCmd = &cobra.Command{
+	Use:   "more-qas",
+	Short: "Show follow-up Q&As of a card's insight",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if moreQasCard == "" {
+			return fmt.Errorf("--card is required")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebInsightMoreQAs(moreQasCard)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
 func init() {
 	accountCmd.AddCommand(accountApikeyCmd)
 	accountCmd.AddCommand(accountSettingsCmd)
 	accountCmd.AddCommand(accountSettingsUpdateCmd)
 	accountCmd.AddCommand(accountSyncCmd)
 	accountCmd.AddCommand(accountInsightCmd)
+	accountCmd.AddCommand(accountInsightStateCmd)
+	accountCmd.AddCommand(accountMoreQAsCmd)
+	accountCmd.AddCommand(accountMailCmd)
 	rootCmd.AddCommand(accountCmd)
 
 	accountInsightCmd.Flags().StringVar(&insightCardID, "card", "", "card ID (required)")
 	accountSettingsUpdateCmd.Flags().StringVar(&settingsJSON, "json", "", "full settings object as JSON (required)")
+	accountInsightStateCmd.Flags().StringVar(&insightStateCard, "card", "", "card ID (required)")
+	accountMoreQAsCmd.Flags().StringVar(&moreQasCard, "card", "", "card ID (required)")
 }

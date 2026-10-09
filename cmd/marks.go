@@ -112,10 +112,90 @@ colorType: 1=Yellow 2=Green 3=Blue 4=Pink 5=Purple`,
 	},
 }
 
+var (
+	expCardIDs []string
+	expMarkIDs []string
+)
+
+var markExportCmd = &cobra.Command{
+	Use:   "export",
+	Short: "Export marks (structured)",
+	Long: `Export highlights. Either --card or --mark may be omitted to export
+by the other dimension.`,
+	Example: `  cubox-cli mark export --card 7435... --mark 7123...,7124...`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(expCardIDs) == 0 && len(expMarkIDs) == 0 {
+			return fmt.Errorf("provide --card and/or --mark")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebMarksExport(expCardIDs, expMarkIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
+var markExportTextCmd = &cobra.Command{
+	Use:   "export-text",
+	Short: "Export marks as plain text",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(expCardIDs) == 0 && len(expMarkIDs) == 0 {
+			return fmt.Errorf("provide --card and/or --mark")
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebMarksExportText(expCardIDs, expMarkIDs)
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
+var markCountCmd = &cobra.Command{
+	Use:   "count",
+	Short: "Show the total mark count",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		raw, err := web.WebMarkCount()
+		if err != nil {
+			return err
+		}
+		printJSON(jsonRaw(raw))
+		return nil
+	},
+}
+
 func init() {
 	markCmd.AddCommand(markListCmd)
 	markCmd.AddCommand(markDeleteCmd)
 	markCmd.AddCommand(markColorCmd)
+	markCmd.AddCommand(markExportCmd)
+	markCmd.AddCommand(markExportTextCmd)
+	markCmd.AddCommand(markCountCmd)
 	rootCmd.AddCommand(markCmd)
 
 	markListCmd.Flags().IntVar(&markPage, "page", 1, "page number (1-based)")
@@ -123,6 +203,10 @@ func init() {
 	markDeleteCmd.Flags().StringSliceVar(&markDelIDs, "id", nil, "mark IDs to delete (comma-separated, required)")
 	markColorCmd.Flags().StringSliceVar(&markColorIDs, "id", nil, "mark IDs to recolor (comma-separated, required)")
 	markColorCmd.Flags().IntVar(&markColor, "color", 0, "colorType 1..5 (required)")
+	markExportCmd.Flags().StringSliceVar(&expCardIDs, "card", nil, "card IDs (comma-separated)")
+	markExportCmd.Flags().StringSliceVar(&expMarkIDs, "mark", nil, "mark IDs (comma-separated)")
+	markExportTextCmd.Flags().StringSliceVar(&expCardIDs, "card", nil, "card IDs (comma-separated)")
+	markExportTextCmd.Flags().StringSliceVar(&expMarkIDs, "mark", nil, "mark IDs (comma-separated)")
 }
 
 var _ = strings.TrimSpace
