@@ -220,6 +220,24 @@ func runFolderMove(cmd *cobra.Command, args []string) error {
 		oldParent = *x.ParentGroupID
 	}
 
+	// Fast path: when no explicit position is requested, move via
+	// /c/api/group/update — it accepts parentGroupId alongside groupName
+	// (verified live) and is far simpler than the drag-snapshot endpoint.
+	if moveIndex < 0 {
+		raw, err := web.WebUpdateFolder(moveID, x.GroupName, movePar)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{
+			"message": "folder moved",
+			"id":      moveID,
+			"name":    x.GroupName,
+			"parent":  movePar,
+			"data":    jsonRaw(raw),
+		})
+		return nil
+	}
+
 	// toGroups: destination siblings minus X, with X inserted at moveIndex.
 	to := make([]map[string]string, 0, len(kids[movePar])+1)
 	pos := 0
@@ -342,6 +360,58 @@ func webClient(cfg *config.Config) (*client.Client, error) {
 	return client.New(cfg.BaseURL(), appToken), nil
 }
 
+// ensureFolderPath resolves or creates a "a/b/c" folder path in the web/app
+// group, returning the leaf folder ID. Existing folders are matched by name
+// under each parent level; missing levels are created.
+func ensureFolderPath(web *client.Client, path string) (string, error) {
+	var parentID string
+	for _, seg := range strings.Split(path, "/") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			return "", fmt.Errorf("empty path segment in folder path %q", path)
+		}
+		groups, err := web.WebListGroups()
+		if err != nil {
+			return "", err
+		}
+		found := ""
+		for _, g := range groups {
+			gp := ""
+			if g.ParentGroupID != nil {
+				gp = *g.ParentGroupID
+			}
+			if g.GroupName == seg && gp == parentID {
+				found = g.GroupID
+				break
+			}
+		}
+		if found == "" {
+			if _, err := web.WebCreateFolder(seg, parentID); err != nil {
+				return "", fmt.Errorf("creating folder %q: %w", seg, err)
+			}
+			groups, err = web.WebListGroups()
+			if err != nil {
+				return "", err
+			}
+			for _, g := range groups {
+				gp := ""
+				if g.ParentGroupID != nil {
+					gp = *g.ParentGroupID
+				}
+				if g.GroupName == seg && gp == parentID {
+					found = g.GroupID
+					break
+				}
+			}
+			if found == "" {
+				return "", fmt.Errorf("folder %q created but not found afterwards", seg)
+			}
+		}
+		parentID = found
+	}
+	return parentID, nil
+}
+
 func runFolderDelete(cmd *cobra.Command, args []string) error {
 	if len(delIDs) == 0 {
 		return fmt.Errorf("--id is required")
@@ -435,6 +505,16 @@ func runFolderNew(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Nested path support: "a/b" creates (or reuses) a under root, then b
+	// under a — the server has no path semantics of its own.
+	if strings.Contains(newName, "/") {
+		leaf, err := ensureFolderPath(web, newName)
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{"message": "folder path ensured", "name": newName, "id": leaf})
+		return nil
+	}
 	raw, err := web.WebCreateFolder(newName, newParent)
 	if err != nil {
 		return err
@@ -455,7 +535,7 @@ func runFolderRename(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := web.WebUpdateFolder(renameID, renameNewName)
+	raw, err := web.WebUpdateFolder(renameID, renameNewName, "")
 	if err != nil {
 		return err
 	}

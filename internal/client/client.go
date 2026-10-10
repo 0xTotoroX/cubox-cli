@@ -76,10 +76,15 @@ func (c *Client) doRequest(req *http.Request) (json.RawMessage, error) {
 //
 // The two groups use different token systems; the bare form is required by
 // the web app and the native Cubox.app (verified against the app's own
-// requests). See cmd/folder.go for the commands that use the web group.
+// requests). The web/app group also expects a Cubox-app-like User-Agent —
+// requests with Go's default UA were observed failing with -1006 while the
+// identical request with the app UA succeeded. See cmd/folder.go for the
+// commands that use the web group.
 func (c *Client) doRequestAuth(req *http.Request, bare bool) (json.RawMessage, error) {
 	if bare {
 		req.Header.Set("Authorization", c.token)
+		req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
+		req.Header.Set("Accept", "*/*")
 	} else {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
@@ -281,10 +286,15 @@ func (c *Client) WebCreateFolder(name, parentID string) (json.RawMessage, error)
 	return c.webPostForm("/c/api/group/new", form)
 }
 
-// WebUpdateFolder renames a folder via POST /c/api/group/update.
-// The endpoint expects application/x-www-form-urlencoded input.
-func (c *Client) WebUpdateFolder(id, name string) (json.RawMessage, error) {
+// WebUpdateFolder updates a folder via POST /c/api/group/update
+// (form-urlencoded). A non-empty parentID also moves the folder under that
+// parent (verified live: the endpoint accepts parentGroupId alongside
+// groupName; omitting groupName trips its "name must not be blank" check).
+func (c *Client) WebUpdateFolder(id, name, parentID string) (json.RawMessage, error) {
 	form := url.Values{"groupId": {id}, "groupName": {name}}
+	if parentID != "" {
+		form.Set("parentGroupId", parentID)
+	}
 	return c.webPostForm("/c/api/group/update", form)
 }
 
@@ -298,6 +308,9 @@ func (c *Client) webPostForm(path string, form url.Values) (json.RawMessage, err
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", c.token) // bare token — was missing, caused -1006 on ALL form endpoints
+	req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
+	req.Header.Set("Accept", "*/*")
 	slow := &http.Client{Timeout: 120 * time.Second}
 	resp, err := slow.Do(req)
 	if err != nil {
@@ -600,6 +613,7 @@ func (c *Client) WebBookmarkImport(filePath string) (json.RawMessage, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
 	return c.doRequestAuth(req, true)
 }
 
@@ -697,6 +711,7 @@ func (c *Client) WebInsightGenerateStream(cardID string, onLine func(string)) er
 		return err
 	}
 	req.Header.Set("Authorization", c.token) // bare, web/app group
+	req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
 	req.Header.Set("Accept", "text/event-stream")
 	streamClient := &http.Client{}
 	resp, err := streamClient.Do(req)
@@ -734,6 +749,7 @@ func (c *Client) WebAIAsk(question, context, collectID string, onDelta func(stri
 		return err
 	}
 	req.Header.Set("Authorization", c.token) // bare, web/app group
+	req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "*/*")
 	streamClient := &http.Client{}

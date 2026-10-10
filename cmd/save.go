@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/OLCUBO/cubox-cli/internal/client"
 	"github.com/OLCUBO/cubox-cli/internal/config"
@@ -10,11 +11,12 @@ import (
 )
 
 var (
-	saveFolder string
-	saveTags   []string
-	saveTitle  string
-	saveDesc   string
-	saveJSON   string
+	saveFolder      string
+	saveTags        []string
+	saveTitle       string
+	saveDesc        string
+	saveJSON        string
+	saveSkipExist   bool
 )
 
 var saveCmd = &cobra.Command{
@@ -51,6 +53,7 @@ func init() {
 	saveCmd.Flags().StringVar(&saveTitle, "title", "", "title for the saved page (single URL mode)")
 	saveCmd.Flags().StringVar(&saveDesc, "desc", "", "description for the saved page (single URL mode)")
 	saveCmd.Flags().StringVar(&saveJSON, "json", "", `batch card entries as JSON array: [{"url":"...","title":"...","description":"..."}]`)
+	saveCmd.Flags().BoolVar(&saveSkipExist, "skip-existing", false, "skip URLs that are already saved (full-library URL diff before saving)")
 
 	rootCmd.AddCommand(saveCmd)
 }
@@ -67,17 +70,76 @@ func runSave(cmd *cobra.Command, args []string) error {
 	}
 	c := client.New(cfg.BaseURL(), cfg.Token)
 
+	if saveSkipExist {
+		var skipped int
+		cards, skipped, err = filterExisting(c, cards)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Skipping %d already-saved card(s); %d to save.\n", skipped, len(cards))
+		if len(cards) == 0 {
+			fmt.Println("Nothing to save.")
+			return nil
+		}
+	}
+
 	req := &client.SaveCardsRequest{
-		Cards:            cards,
-		FolderNestedName: saveFolder,
-		TagNestedNames:   saveTags,
+		Cards:          cards,
+		TagNestedNames: saveTags,
+	}
+
+	// Nested --folder support: the server treats "a/b" as a flat folder name
+	// containing a slash. Resolve the path level by level (creating missing
+	// folders), save without a folder, then move the saved cards into the
+	// deepest folder. For large batches prefer `cubox-cli import bookmarks`.
+	nestedTarget := ""
+	if saveFolder != "" && strings.Contains(saveFolder, "/") {
+		web, err := webClient(cfg)
+		if err != nil {
+			return err
+		}
+		nestedTarget, err = ensureFolderPath(web, saveFolder)
+		if err != nil {
+			return err
+		}
+	} else {
+		req.FolderNestedName = saveFolder
 	}
 
 	if err := c.SaveCards(req); err != nil {
 		return err
 	}
 
-	fmt.Printf("Saved %d card(s) successfully.\n", len(cards))
+	if nestedTarget == "" {
+		fmt.Printf("Saved %d card(s) successfully.\n", len(cards))
+		return nil
+	}
+
+	// Resolve each saved card by its URL and move it into the target folder.
+	web, err := webClient(cfg)
+	if err != nil {
+		return err
+	}
+	moved, unresolved := 0, []string{}
+	for _, card := range cards {
+		found, err := c.FilterCards(&client.CardFilterRequest{UrlFilter: card.URL, Limit: 1})
+		if err != nil || len(found) == 0 {
+			unresolved = append(unresolved, card.URL)
+			continue
+		}
+		if _, err := web.WebCardsMove([]string{found[0].ID}, nestedTarget); err != nil {
+			unresolved = append(unresolved, card.URL)
+			continue
+		}
+		moved++
+	}
+	fmt.Printf("Saved %d card(s) successfully; moved %d into %q.\n", len(cards), moved, saveFolder)
+	if len(unresolved) > 0 {
+		fmt.Printf("WARNING: %d card(s) could not be resolved/moved yet (parsing is async) — re-run the same command with --skip-existing to retry, or move them manually.\n", len(unresolved))
+		for _, u := range unresolved {
+			fmt.Printf("  unresolved: %s\n", u)
+		}
+	}
 	return nil
 }
 
@@ -122,4 +184,38 @@ func buildSaveCards(args []string) ([]client.SaveCardEntry, error) {
 		})
 	}
 	return cards, nil
+}
+
+// filterExisting removes entries whose URL is already saved. It pages through
+// the whole library once (cursor pagination) and builds a URL set locally —
+// the server has no batch URL lookup and no dedup of its own.
+func filterExisting(c *client.Client, cards []client.SaveCardEntry) ([]client.SaveCardEntry, int, error) {
+	seen := map[string]bool{}
+	last := ""
+	for {
+		found, err := c.FilterCards(&client.CardFilterRequest{Limit: 50, LastCardID: last})
+		if err != nil {
+			return nil, 0, fmt.Errorf("listing library for --skip-existing: %w", err)
+		}
+		if len(found) == 0 {
+			break
+		}
+		for _, fc := range found {
+			seen[fc.URL] = true
+			last = fc.ID
+		}
+		if len(found) < 50 {
+			break
+		}
+	}
+	kept := make([]client.SaveCardEntry, 0, len(cards))
+	skipped := 0
+	for _, card := range cards {
+		if seen[card.URL] {
+			skipped++
+			continue
+		}
+		kept = append(kept, card)
+	}
+	return kept, skipped, nil
 }
