@@ -114,6 +114,9 @@ func runFolderArchive(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseIfSystemGroup(web, archIDs...); err != nil {
+		return err
+	}
 	groups, err := web.WebListGroups()
 	if err != nil {
 		return err
@@ -207,6 +210,9 @@ func runFolderMove(cmd *cobra.Command, args []string) error {
 			p = *g.ParentGroupID
 		}
 		kids[p] = append(kids[p], g)
+	}
+	if err := refuseIfSystemGroup(web, moveID); err != nil {
+		return err
 	}
 	x, found := byID[moveID]
 	if !found {
@@ -360,6 +366,39 @@ func webClient(cfg *config.Config) (*client.Client, error) {
 	return client.New(cfg.BaseURL(), appToken), nil
 }
 
+// systemGroupID returns the account's protected system group id (the
+// "Uncategorized" / collection box, the group with an empty name). Operating
+// on it (delete/rename/move/archive) corrupts the server-side group tree —
+// this guard exists because exactly that happened on 2026-10-09 and required
+// official server-side repair.
+func systemGroupID(web *client.Client) (string, error) {
+	groups, err := web.WebListGroups()
+	if err != nil {
+		return "", err
+	}
+	for _, g := range groups {
+		if g.GroupName == "" {
+			return g.GroupID, nil
+		}
+	}
+	return "", nil
+}
+
+// refuseIfSystemGroup aborts with an explanation when any target is the
+// protected system group.
+func refuseIfSystemGroup(web *client.Client, ids ...string) error {
+	sysID, err := systemGroupID(web)
+	if err != nil || sysID == "" {
+		return err // unresolvable → do not block on it, the loop below still guards per-id
+	}
+	for _, id := range ids {
+		if id == sysID {
+			return fmt.Errorf("refusing to operate on the system 'Uncategorized' group (%s): the server requires it; removing it corrupts the account group tree (incident 2026-10-09). If you really need this, ask Cubox support first", id)
+		}
+	}
+	return nil
+}
+
 // ensureFolderPath resolves or creates a "a/b/c" folder path in the web/app
 // group, returning the leaf folder ID. Existing folders are matched by name
 // under each parent level; missing levels are created.
@@ -433,6 +472,10 @@ func runFolderDelete(cmd *cobra.Command, args []string) error {
 	byID := make(map[string]client.WebGroup, len(groups))
 	for _, g := range groups {
 		byID[g.GroupID] = g
+	}
+
+	if err := refuseIfSystemGroup(web, delIDs...); err != nil {
+		return err
 	}
 
 	type result struct {
@@ -533,6 +576,9 @@ func runFolderRename(cmd *cobra.Command, args []string) error {
 	}
 	web, err := webClient(cfg)
 	if err != nil {
+		return err
+	}
+	if err := refuseIfSystemGroup(web, renameID); err != nil {
 		return err
 	}
 	raw, err := web.WebUpdateFolder(renameID, renameNewName, "")

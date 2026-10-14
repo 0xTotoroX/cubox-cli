@@ -81,6 +81,23 @@ cubox-cli ai ask --question Q [--context TEXT]   # ⚠ experimental: endpoint ve
   behavior — cards are never lost). `--hard` skips the move step.
 - `--dry-run` previews the operation without touching anything.
 
+### Safety mechanisms / 安全机制
+
+Born from the 2026-10-09 incident (an unthrottled debug loop deleted the
+system "Uncategorized" group and corrupted the server-side account group
+tree, requiring official repair):
+
+1. **System-group guard**: `folder delete / rename / move / archive` refuse
+   to operate on the account's system "Uncategorized" group (the one with an
+   empty name / the collectionBox) — deleting it corrupts the server group
+   tree. Applies to `--dry-run` too.
+2. **Global request throttle**: every CLI/API request is spaced at least
+   500 ms apart, process-wide.
+3. **Circuit breaker**: 3 consecutive API errors abort the run instead of
+   hammering the server.
+4. `folder delete` keeps its **safe mode** (cards moved to Uncategorized
+   before the folder is deleted) and `--dry-run` preview.
+
 ### Request-encoding notes (reverse-engineered)
 
 The web/app group uses **several different body encodings**, and the server

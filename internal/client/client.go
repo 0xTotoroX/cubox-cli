@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,45 @@ type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
+
+	// Safety: global request throttle + consecutive-error circuit breaker.
+	// Added after a 2026-10-09 incident where an unthrottled debug loop
+	// triggered server-side account state corruption.
+	mu          sync.Mutex
+	lastReq     time.Time
+	errStreak   int
+}
+
+const (
+	minRequestInterval = 500 * time.Millisecond
+	maxErrorStreak     = 3
+)
+
+// throttle enforces a global minimum interval between requests.
+func (c *Client) throttle() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if wait := minRequestInterval - time.Since(c.lastReq); wait > 0 {
+		time.Sleep(wait)
+	}
+	c.lastReq = time.Now()
+}
+
+// noteError records an API error for the circuit breaker; noteSuccess resets it.
+func (c *Client) noteError() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.errStreak++
+	if c.errStreak >= maxErrorStreak {
+		return fmt.Errorf("circuit breaker tripped: %d consecutive API errors — aborting to protect the account; check the server state before retrying", c.errStreak)
+	}
+	return nil
+}
+
+func (c *Client) noteSuccess() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.errStreak = 0
 }
 
 func New(baseURL, token string) *Client {
@@ -81,6 +121,7 @@ func (c *Client) doRequest(req *http.Request) (json.RawMessage, error) {
 // identical request with the app UA succeeded. See cmd/folder.go for the
 // commands that use the web group.
 func (c *Client) doRequestAuth(req *http.Request, bare bool) (json.RawMessage, error) {
+	c.throttle()
 	if bare {
 		req.Header.Set("Authorization", c.token)
 		req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
@@ -109,8 +150,12 @@ func (c *Client) doRequestAuth(req *http.Request, bare bool) (json.RawMessage, e
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 	if apiResp.Code != 200 {
+		if cbErr := c.noteError(); cbErr != nil {
+			return nil, cbErr
+		}
 		return nil, fmt.Errorf("API error %d: %s", apiResp.Code, apiResp.Message)
 	}
+	c.noteSuccess()
 	return apiResp.Data, nil
 }
 
@@ -311,6 +356,7 @@ func (c *Client) webPostForm(path string, form url.Values) (json.RawMessage, err
 	req.Header.Set("Authorization", c.token) // bare token — was missing, caused -1006 on ALL form endpoints
 	req.Header.Set("User-Agent", "Cubox/8.3.1 (com.linnk.Linnk; build:668; macOS(Catalyst) 27.0.0) Alamofire/5.10.2")
 	req.Header.Set("Accept", "*/*")
+	c.throttle()
 	slow := &http.Client{Timeout: 120 * time.Second}
 	resp, err := slow.Do(req)
 	if err != nil {
