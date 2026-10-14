@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/OLCUBO/cubox-cli/internal/client"
 	"github.com/OLCUBO/cubox-cli/internal/config"
@@ -58,6 +59,15 @@ type deleteResult struct {
 }
 
 func runDelete(cmd *cobra.Command, args []string) error {
+	// pflag keeps trailing-comma artifacts as empty strings — drop them so
+	// counts and server payloads stay accurate.
+	cleaned := make([]string, 0, len(deleteIDs))
+	for _, id := range deleteIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			cleaned = append(cleaned, id)
+		}
+	}
+	deleteIDs = cleaned
 	if len(deleteIDs) == 0 {
 		return fmt.Errorf("at least one card ID is required")
 	}

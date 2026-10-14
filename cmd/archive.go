@@ -5,6 +5,8 @@ import (
 
 	"github.com/OLCUBO/cubox-cli/internal/client"
 	"github.com/OLCUBO/cubox-cli/internal/config"
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
@@ -65,7 +67,14 @@ type archiveResult struct {
 }
 
 func runArchive(cmd *cobra.Command, args []string) error {
-	if len(archiveIDs) == 0 {
+	cleaned := make([]string, 0, len(archiveIDs))
+		for _, id := range archiveIDs {
+			if id = strings.TrimSpace(id); id != "" {
+				cleaned = append(cleaned, id)
+			}
+		}
+		archiveIDs = cleaned
+		if len(archiveIDs) == 0 {
 		return fmt.Errorf("at least one card ID is required")
 	}
 
