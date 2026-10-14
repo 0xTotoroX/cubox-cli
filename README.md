@@ -10,6 +10,33 @@ The official Cubox CLI. Save, search, read, and use what you read with AI. Your 
 
 [Install](#installation) · [Auth](#authentication) · [Commands](#commands) · [AI Agent](#quick-start-ai-agent) · [Examples](#examples) · [Development](#development)
 
+## ⭐ Fork Addition: What This Fork Adds Over the Official CLI
+
+> 本节为 fork 新增说明。以下官方 README 内容保持原样，未做修改。
+> This section is fork-only; everything below is the original official README, untouched.
+
+Compared with the official CLI (v1.0.10), this fork **unlocks the full web/app API group** that the official CLI does not expose:
+
+| Area | Official CLI | This Fork |
+| ---- | ------------ | --------- |
+| Folders | `list` only | + **delete** (safe mode), **new** (nested paths), **rename**, **archive**, **move** (incl. root level) |
+| Recycle bin | ✗ | + `recycle list / recover / clean` |
+| Marks (highlights) | ✗ | + `mark list / count / delete / color / export` |
+| Reading lists | ✗ | + `lists` full CRUD, item management, publish, sort, check |
+| Batch card ops | single-card only | + batch `star / read / move / tag` |
+| Tags | ✗ new | + `tag new`, `tag sort` |
+| Export | ✗ | + `export status / bookmarks / mail` |
+| Import | ✗ | + `import bookmarks --file` (official task pipeline, no 20-item truncation) |
+| Account | ✗ | + `account apikey / settings / sync / mail / insight / insight-state / more-qas` |
+| AI | ✗ | + `ai generate` (SSE streaming), `ai ask` (experimental, Pro+AI) |
+| `save` | basic | + `--skip-existing` dedup, `--verify` audit, nested `--folder`, batched ≤20/req |
+
+**Safety built in** (after a real incident): system-group guard ("未分类" is undeletable), global 500ms request throttle, 3-error circuit breaker, safe-delete + `--dry-run`.
+
+Details and reverse-engineering notes: see [FORK.md](./FORK.md).
+
+---
+
 ## Features
 
 
