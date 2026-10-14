@@ -185,9 +185,8 @@ func runFolderMove(cmd *cobra.Command, args []string) error {
 	if moveID == "" {
 		return fmt.Errorf("--id is required")
 	}
-	if movePar == "" {
-		return fmt.Errorf("--parent is required (moving to root is not supported yet)")
-	}
+	// --parent empty = move to root level (via move/another with a JSON-null
+	// parentGroupId — verified live on the 187 test account 2026-10-14).
 	// moveIndex < 0 means "append last" — no explicit validation needed.
 	cfg, err := config.Load()
 	if err != nil {
@@ -218,12 +217,36 @@ func runFolderMove(cmd *cobra.Command, args []string) error {
 	if !found {
 		return fmt.Errorf("folder %s does not exist", moveID)
 	}
-	if _, dst := byID[movePar]; !dst {
-		return fmt.Errorf("destination parent %s does not exist", movePar)
+	if movePar != "" {
+		if _, dst := byID[movePar]; !dst {
+			return fmt.Errorf("destination parent %s does not exist", movePar)
+		}
 	}
 	oldParent := ""
 	if x.ParentGroupID != nil {
 		oldParent = *x.ParentGroupID
+	}
+
+	// Root-level move: move/another with a JSON-null parentGroupId
+	// (verified live). update cannot do this: omitting the field is a pure
+	// rename, and an EMPTY parentGroupId DELETES the group (verified!).
+	if movePar == "" && moveIndex < 0 {
+		if err := refuseIfSystemGroup(web, moveID); err != nil {
+			return err
+		}
+		to := []map[string]interface{}{{"groupId": moveID, "parentGroupId": nil}}
+		tb, _ := json.Marshal(to)
+		raw, err := web.WebMoveFolderAnother("", string(tb))
+		if err != nil {
+			return err
+		}
+		printJSON(map[string]interface{}{
+			"message": "folder moved to root level",
+			"id":      moveID,
+			"parent":  nil,
+			"data":    jsonRaw(raw),
+		})
+		return nil
 	}
 
 	// Fast path: when no explicit position is requested, move via

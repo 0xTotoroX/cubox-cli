@@ -222,9 +222,12 @@ func (c *Client) GetCardDetail(id string) (*CardDetail, error) {
 	return &detail, nil
 }
 
-func (c *Client) SaveCards(req *SaveCardsRequest) error {
-	_, err := c.post("/c/api/cli/cards/save", req)
-	return err
+// SaveCards saves cards via the CLI group. Returns the response payload so
+// callers can verify. NOTE: the server silently truncates batches larger
+// than ~20 entries (verified live 2026-10-09: 50/entry batches saved only the
+// first 20 while still returning success) — always batch to <= 20.
+func (c *Client) SaveCards(req *SaveCardsRequest) (json.RawMessage, error) {
+	return c.post("/c/api/cli/cards/save", req)
 }
 
 func (c *Client) UpdateCard(req *CardUpdateRequest) error {

@@ -17,7 +17,13 @@ var (
 	saveDesc        string
 	saveJSON        string
 	saveSkipExist   bool
+	saveVerify      bool
 )
+
+// saveBatchSize is the server-side batch cap: the /c/api/cli/cards/save
+// endpoint silently truncates larger batches (verified live). Keep every
+// request at or below this.
+const saveBatchSize = 20
 
 var saveCmd = &cobra.Command{
 	Use:   "save [urls...]",
@@ -54,6 +60,7 @@ func init() {
 	saveCmd.Flags().StringVar(&saveDesc, "desc", "", "description for the saved page (single URL mode)")
 	saveCmd.Flags().StringVar(&saveJSON, "json", "", `batch card entries as JSON array: [{"url":"...","title":"...","description":"..."}]`)
 	saveCmd.Flags().BoolVar(&saveSkipExist, "skip-existing", false, "skip URLs that are already saved (full-library URL diff before saving)")
+	saveCmd.Flags().BoolVar(&saveVerify, "verify", false, "after saving, audit every URL to confirm it actually landed (slower)")
 
 	rootCmd.AddCommand(saveCmd)
 }
@@ -106,8 +113,39 @@ func runSave(cmd *cobra.Command, args []string) error {
 		req.FolderNestedName = saveFolder
 	}
 
-	if err := c.SaveCards(req); err != nil {
-		return err
+	// Batched save: the server truncates >20-entry batches silently.
+	saved := 0
+	for i := 0; i < len(cards); i += saveBatchSize {
+		end := i + saveBatchSize
+		if end > len(cards) {
+			end = len(cards)
+		}
+		req.Cards = cards[i:end]
+		if _, err := c.SaveCards(req); err != nil {
+			return fmt.Errorf("batch %d-%d failed: %w — stopping; %d/%d card(s) saved before failure", i+1, end, err, saved, len(cards))
+		}
+		saved += end - i
+		if len(cards) > saveBatchSize {
+			fmt.Printf("  batch done: %d/%d saved\n", saved, len(cards))
+		}
+	}
+
+	if saveVerify && nestedTarget == "" {
+		// URL-level audit: confirm every card actually landed.
+		missing := 0
+		for _, card := range cards {
+			found, err := c.FilterCards(&client.CardFilterRequest{UrlFilter: card.URL, Limit: 1})
+			if err != nil || len(found) == 0 {
+				missing++
+				fmt.Printf("  WARNING unresolved: %s\n", card.URL)
+			}
+		}
+		if missing > 0 {
+			fmt.Printf("Saved %d card(s); %d UNRESOLVED after verify (parsing may be async — re-run with --skip-existing to retry).\n", saved, missing)
+		} else {
+			fmt.Printf("Saved %d card(s); verify passed — all %d URLs resolved.\n", saved, len(cards))
+		}
+		return nil
 	}
 
 	if nestedTarget == "" {
@@ -133,7 +171,7 @@ func runSave(cmd *cobra.Command, args []string) error {
 		}
 		moved++
 	}
-	fmt.Printf("Saved %d card(s) successfully; moved %d into %q.\n", len(cards), moved, saveFolder)
+	fmt.Printf("Saved %d card(s) successfully; moved %d into %q.\n", saved, moved, saveFolder)
 	if len(unresolved) > 0 {
 		fmt.Printf("WARNING: %d card(s) could not be resolved/moved yet (parsing is async) — re-run the same command with --skip-existing to retry, or move them manually.\n", len(unresolved))
 		for _, u := range unresolved {

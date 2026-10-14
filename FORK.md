@@ -93,6 +93,23 @@ tree, requiring official repair):
    tree. Applies to `--dry-run` too.
 2. **Global request throttle**: every CLI/API request is spaced at least
    500 ms apart, process-wide.
+
+### Save hardening / 保存加固
+
+- `save --json` now **batches to ≤20 entries per request** (the server
+  silently truncates larger batches while reporting success) and **stops on
+  the first failed batch** with a count of what was saved before it.
+- `save --verify`: after saving, audit every URL to confirm it actually
+  landed (slower; parsing is async so freshly saved cards may need minutes
+  before they resolve).
+- `save --folder "a/b"` resolves the nested path level by level (creating
+  missing folders) instead of creating a flat folder whose name contains a
+  slash.
+- Note: nested folder creation requires **Cubox Pro** (free accounts get
+  -1025 on the second level).
+- `folder move --id X` (no --parent) moves a folder to the root level via
+  move/another with a JSON-null parentGroupId. WARNING: `group/update` with
+  an EMPTY parentGroupId DELETES the group — never send that.
 3. **Circuit breaker**: 3 consecutive API errors abort the run instead of
    hammering the server.
 4. `folder delete` keeps its **safe mode** (cards moved to Uncategorized
