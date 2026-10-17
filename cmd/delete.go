@@ -1,20 +1,23 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/OLCUBO/cubox-cli/internal/client"
 	"github.com/OLCUBO/cubox-cli/internal/config"
+	"github.com/OLCUBO/cubox-cli/internal/tagcleanup"
 	"github.com/spf13/cobra"
 )
 
 const detailPreviewThreshold = 3
 
 var (
-	deleteIDs    []string
-	deleteDryRun bool
+	deleteIDs     []string
+	deleteDryRun  bool
+	keepEmptyTags bool
 )
 
 var deleteCmd = &cobra.Command{
@@ -26,9 +29,13 @@ Use --dry-run to preview which cards would be deleted without actually
 removing them. This is especially recommended when scripting or when
 an AI Agent is performing deletions on behalf of a user.
 
-When deleting up to 3 cards, the CLI fetches card details (title, URL)
-for the preview. For larger batches, only the count and IDs are shown
-to avoid expensive per-card API calls.
+When deleting up to 3 cards, the CLI shows titles and URLs in the preview.
+For larger batches, it shows only the card count and predicted empty tags.
+
+After a successful deletion, the CLI checks tags that were on those cards.
+Empty leaf tags with no active or archived cards are deleted automatically.
+Use --keep-empty-tags to leave them in place. For an already-empty tag, use
+"cubox-cli tag prune-empty --name NAME" to preview it.
 
 Examples:
   cubox-cli delete --id 7435692934957108160
@@ -41,6 +48,7 @@ func init() {
 	deleteCmd.Flags().StringSliceVar(&deleteIDs, "id", nil, "card IDs to delete (comma-separated, required)")
 	deleteCmd.MarkFlagRequired("id")
 	deleteCmd.Flags().BoolVar(&deleteDryRun, "dry-run", false, "preview cards to be deleted without actually deleting")
+	deleteCmd.Flags().BoolVar(&keepEmptyTags, "keep-empty-tags", false, "skip automatic cleanup of empty tags after deleting cards")
 
 	rootCmd.AddCommand(deleteCmd)
 }
@@ -52,10 +60,11 @@ type deletePreview struct {
 }
 
 type deleteResult struct {
-	DryRun  bool            `json:"dry_run"`
-	Count   int             `json:"count"`
-	Cards   []deletePreview `json:"cards,omitempty"`
-	Message string          `json:"message"`
+	DryRun  bool               `json:"dry_run"`
+	Count   int                `json:"count"`
+	Cards   []deletePreview    `json:"cards,omitempty"`
+	Tags    *tagcleanup.Report `json:"tag_cleanup,omitempty"`
+	Message string             `json:"message"`
 }
 
 func runDelete(cmd *cobra.Command, args []string) error {
@@ -79,47 +88,52 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	c := client.New(cfg.BaseURL(), cfg.Token)
 
 	if deleteDryRun {
-		return outputDryRun(c, deleteIDs)
+		return outputDryRun(cmd.Context(), c, deleteIDs, keepEmptyTags)
 	}
-	return executeDelete(c, deleteIDs)
+	return executeDelete(cmd.Context(), c, deleteIDs, keepEmptyTags)
 }
 
-func outputDryRun(c *client.Client, ids []string) error {
+func outputDryRun(ctx context.Context, c *client.Client, ids []string, keepTags bool) error {
 	count := len(ids)
-
-	if count <= detailPreviewThreshold {
-		previews := fetchDeletePreviews(c, ids)
-		result := deleteResult{
-			DryRun:  true,
-			Count:   count,
-			Cards:   previews,
-			Message: fmt.Sprintf("[dry-run] Would delete %d card(s). No changes were made.", count),
-		}
-		if outputFormat == "text" {
-			fmt.Fprintf(os.Stderr, "[dry-run] Would delete %d card(s):\n\n", count)
-			printDeletePreviewText(previews)
-			fmt.Fprintln(os.Stderr, "No changes were made. Remove --dry-run to delete.")
-			return nil
-		}
-		printJSON(result)
-		return nil
-	}
-
 	result := deleteResult{
 		DryRun:  true,
 		Count:   count,
 		Message: fmt.Sprintf("[dry-run] Would delete %d card(s). No changes were made.", count),
 	}
+	if count <= detailPreviewThreshold {
+		result.Cards = fetchDeletePreviews(c, ids)
+	}
+	if !keepTags {
+		tags, err := c.ListTags()
+		if err != nil {
+			return err
+		}
+		affected, err := tagcleanup.AffectedTags(c, tags, ids)
+		if err != nil {
+			return err
+		}
+		preview, err := tagcleanup.PreviewAfterDelete(ctx, c, tags, affected, ids)
+		if err != nil {
+			return err
+		}
+		result.Tags = &preview
+	}
 	if outputFormat == "text" {
-		fmt.Fprintf(os.Stderr, "[dry-run] Would delete %d card(s). No changes were made.\n", count)
-		fmt.Fprintf(os.Stderr, "Remove --dry-run to delete.\n")
+		fmt.Fprintf(os.Stderr, "[dry-run] Would delete %d card(s):\n\n", count)
+		if len(result.Cards) > 0 {
+			printDeletePreviewText(result.Cards)
+		}
+		if result.Tags != nil {
+			fmt.Fprintf(os.Stderr, "Tags that would become empty: %v\n", result.Tags.Eligible)
+		}
+		fmt.Fprintln(os.Stderr, "No changes were made. Remove --dry-run to delete.")
 		return nil
 	}
 	printJSON(result)
 	return nil
 }
 
-func executeDelete(c *client.Client, ids []string) error {
+func executeDelete(ctx context.Context, c *client.Client, ids []string, keepTags bool) error {
 	count := len(ids)
 
 	if outputFormat == "text" && count <= detailPreviewThreshold {
@@ -128,7 +142,8 @@ func executeDelete(c *client.Client, ids []string) error {
 		printDeletePreviewText(previews)
 	}
 
-	if err := c.DeleteCards(ids); err != nil {
+	workflow, err := deleteCardsAndPrune(ctx, c, ids, keepTags)
+	if !workflow.CardDeleted {
 		return err
 	}
 
@@ -137,13 +152,63 @@ func executeDelete(c *client.Client, ids []string) error {
 		Count:   count,
 		Message: fmt.Sprintf("Successfully deleted %d card(s).", count),
 	}
+	if !keepTags {
+		result.Tags = &workflow.Tags
+	}
+	if err != nil {
+		result.Message = fmt.Sprintf("Deleted %d card(s), but empty-tag cleanup failed: %v", count, err)
+	}
 
 	if outputFormat == "text" {
-		fmt.Fprintf(os.Stderr, "Successfully deleted %d card(s).\n", count)
-		return nil
+		fmt.Fprintln(os.Stderr, result.Message)
+		if result.Tags != nil {
+			fmt.Fprintf(os.Stderr, "Empty tags deleted: %v; skipped: %v\n", result.Tags.Deleted, result.Tags.Skipped)
+		}
+		return err
 	}
 	printJSON(result)
-	return nil
+	return err
+}
+
+type deleteStore interface {
+	tagcleanup.Store
+	tagcleanup.CardReader
+	DeleteCards([]string) error
+}
+
+type deleteWorkflowReport struct {
+	CardDeleted bool
+	Tags        tagcleanup.Report
+}
+
+func deleteCardsAndPrune(ctx context.Context, store deleteStore, ids []string, keepTags bool) (deleteWorkflowReport, error) {
+	report := deleteWorkflowReport{}
+	var affected []string
+	if !keepTags {
+		tags, err := store.ListTags()
+		if err != nil {
+			return report, err
+		}
+		affected, err = tagcleanup.AffectedTags(store, tags, ids)
+		if err != nil {
+			return report, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
+	if err := store.DeleteCards(ids); err != nil {
+		return report, err
+	}
+	report.CardDeleted = true
+	if !keepTags {
+		var err error
+		report.Tags, err = tagcleanup.Prune(ctx, store, affected, true)
+		if err != nil {
+			return report, fmt.Errorf("cards were deleted; empty-tag cleanup: %w", err)
+		}
+	}
+	return report, nil
 }
 
 // fetchDeletePreviews fetches card details for a small set of IDs to build a

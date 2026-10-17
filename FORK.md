@@ -23,7 +23,7 @@ cubox-cli recycle list [--page N]
 cubox-cli recycle recover --id ID[,ID2,...]
 cubox-cli recycle clean --id ID[,ID2,...]        # permanent, destructive
 
-# Tags (web/app group)
+# Tags (CLI and web/app groups)
 cubox-cli tag new --name NAME [--parent TAG_ID]
 cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID  # preserves tag ID and card links
 cubox-cli tag topic --id CARD_ID [--apply]              # AI topic preview; add approved tags only
@@ -32,6 +32,8 @@ cubox-cli tag topic review --plan PLAN --name NAME --decision approved|merged|re
 cubox-cli tag topic auto-review --plan PLAN          # merge synonyms and auto-approve repeated, supported topics locally
 cubox-cli tag topic backfill --plan PLAN [--apply]       # reclassify reviewed batch
 cubox-cli tag topic backfill --plan PLAN --auto [--apply] # keep pending terms; apply creates approved tags before backfill
+cubox-cli tag prune-empty --name PICSED [--apply] # preview or remove an already-empty leaf tag
+cubox-cli delete --id CARD_ID [--dry-run] [--keep-empty-tags] # prunes affected empty leaf tags by default
 cubox-cli tag sort --json '{...}'                # experimental drag-order payload
 
 # Marks (highlights)

@@ -208,7 +208,7 @@ Returns: `{ "count": N, "message": "Successfully archived/unarchived N card(s)."
 cubox-cli delete --id CARD_ID [--id ID2,...] [--dry-run]
 ```
 
-Delete cards by ID. **Always `--dry-run` first.** **[Must-read: Dry Run Policy](references/card-delete.md)** — agents must preview before deleting.
+Delete cards by ID. **Always `--dry-run` first.** **[Must-read: Dry Run Policy](references/card-delete.md)** — agents must preview before deleting. This fork previews tags that would become empty too. A real CLI deletion automatically removes affected leaf tags only after confirming no active or archived cards and no children remain; `--keep-empty-tags` disables that cleanup. Reviewed `主题/*` vocabulary and `处理/*` workflow tags are retained by automatic cleanup. For a tag already emptied outside the CLI, use `tag prune-empty --name PICSED` to preview and add `--apply` to delete after rechecking. Protected root tags are never pruned.
 
 ### List Annotations
 

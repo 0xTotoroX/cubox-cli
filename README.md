@@ -304,6 +304,17 @@ Batch delete one or more tags by ID. Cards previously tagged with the deleted ta
 cubox-cli tag delete --id TAG_ID[,ID2,...]
 ```
 
+### `cubox-cli tag prune-empty`
+
+Inspect an already-empty tag by exact name or ID. Preview is the default; `--apply` rechecks and deletes it only if it has no active cards, archived cards, or child tags. The root tags `来源`, `处理`, `skill`, `笔记`, and `主题` are protected.
+
+```bash
+cubox-cli tag prune-empty --name PICSED
+cubox-cli tag prune-empty --name PICSED --apply
+```
+
+After a CLI card deletion, only tags used by those deleted cards are checked and empty leaf tags are pruned automatically. Reviewed `主题/*` vocabulary and `处理/*` workflow tags are retained. Deleting cards in the Cubox app does not invoke the CLI; use this command for tags already emptied there.
+
 | Flag          | Description                                          |
 | ------------- | ---------------------------------------------------- |
 | `--id ID,...` | Tag IDs to delete (comma-separated, required)        |
@@ -467,9 +478,10 @@ cubox-cli delete --id CARD_ID [flags]
 | --------------- | ------------------------------------------------------ |
 | `--id ID,...`   | Card IDs to delete (comma-separated, required)         |
 | `--dry-run`     | Preview cards to be deleted without actually deleting   |
+| `--keep-empty-tags` | Keep empty tags after card deletion instead of pruning them |
 
 
-**Dry Run:** Always use `--dry-run` first to preview which cards will be deleted. For ≤ 3 cards the preview includes title and URL; for larger batches only the count is shown to avoid expensive per-card lookups.
+**Dry Run:** Use `--dry-run` first. It also predicts which affected tags would become empty, without writing to Cubox. For ≤ 3 cards it includes title and URL; larger batches omit per-card details. Before a real deletion, the CLI reads the target cards and their tags; if it cannot match a tag safely, it stops before deleting cards. After deletion it checks both active and archived cards and child tags, then verifies any tag deletion. Card and tag deletion are not transactional: if cleanup fails, the cards may already be gone and the command reports this explicitly.
 
 ```bash
 # Preview
