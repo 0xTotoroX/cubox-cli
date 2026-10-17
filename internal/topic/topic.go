@@ -29,14 +29,16 @@ type ApprovedTopic struct {
 }
 
 type Input struct {
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	Content     string          `json:"content,omitempty"`
-	Folder      string          `json:"folder,omitempty"`
-	Evidence    string          `json:"evidence"`
-	Existing    []string        `json:"existing_tags"`
-	Approved    []ApprovedTopic `json:"approved_topics"`
-	MaxTopics   int             `json:"max_topics"`
+	Title       string            `json:"title"`
+	Description string            `json:"description,omitempty"`
+	Content     string            `json:"content,omitempty"`
+	Folder      string            `json:"folder,omitempty"`
+	Evidence    string            `json:"evidence"`
+	Existing    []string          `json:"existing_tags"`
+	Approved    []ApprovedTopic   `json:"approved_topics"`
+	Aliases     map[string]string `json:"reviewed_aliases,omitempty"`
+	Rejected    []string          `json:"rejected_topics,omitempty"`
+	MaxTopics   int               `json:"max_topics"`
 }
 
 type Decision struct {
@@ -69,9 +71,6 @@ func Process(ctx context.Context, store Store, classifier Classifier, cardID str
 		return result, err
 	}
 	approved := approvedTopics(tags)
-	if apply && len(approved) == 0 {
-		return result, fmt.Errorf("no approved 主题/* tags exist; review and create a topic vocabulary before --apply")
-	}
 	card, err := store.GetCardDetail(cardID)
 	if err != nil {
 		return result, err
@@ -86,6 +85,9 @@ func Process(ctx context.Context, store Store, classifier Classifier, cardID str
 		result.Status = "insufficient"
 		result.Reason = "正文与描述不足，未按标题猜测主题"
 		return result, nil
+	}
+	if apply && len(approved) == 0 {
+		return result, fmt.Errorf("no approved 主题/* tags exist; review and create a topic vocabulary before --apply")
 	}
 	if classifier == nil {
 		return result, fmt.Errorf("topic classifier is not configured")
@@ -285,6 +287,9 @@ func validateDecision(d Decision, approved []ApprovedTopic, existing []string, m
 			seenNames[name] = true
 			suggested = append(suggested, name)
 		}
+	}
+	if len(selected)+len(suggested) > maxAllowed {
+		return nil, nil, fmt.Errorf("model returned more than %d topic choices including suggestions", maxAllowed)
 	}
 	return selected, suggested, nil
 }

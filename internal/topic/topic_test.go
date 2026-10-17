@@ -205,3 +205,13 @@ func TestThreeTopicTotalLimit(t *testing.T) {
 		t.Fatal("fourth topic was not rejected")
 	}
 }
+
+func TestSuggestionsAndApprovedSelectionsShareTopicLimit(t *testing.T) {
+	store := testStore()
+	model := &fakeClassifier{decision: Decision{
+		Sufficient: true, TopicIDs: []string{"mcp", "km"}, Suggested: []string{"跨设备同步", "自动化"},
+	}}
+	if _, err := Process(context.Background(), store, model, "card-1", false); err == nil {
+		t.Fatal("four proposed topics were accepted")
+	}
+}

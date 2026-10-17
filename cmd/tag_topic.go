@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/OLCUBO/cubox-cli/internal/client"
 	"github.com/OLCUBO/cubox-cli/internal/config"
@@ -22,6 +21,7 @@ var tagTopicCmd = &cobra.Command{
 substantial description. Only existing direct children of the 主题 tag are
 eligible. Preview is the default; --apply adds missing approved tags only.
 New topic names are suggestions for review and are never created automatically.
+Use collect, review, and backfill for a batch of cards.
 
 Set CUBOX_TOPIC_API_URL to an OpenAI-compatible chat completions URL,
 CUBOX_TOPIC_MODEL to the model name, and CUBOX_TOPIC_API_KEY for a remote API.
@@ -43,11 +43,7 @@ func runTagTopic(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	classifier, err := topic.NewChatClassifier(
-		os.Getenv("CUBOX_TOPIC_API_URL"),
-		os.Getenv("CUBOX_TOPIC_API_KEY"),
-		os.Getenv("CUBOX_TOPIC_MODEL"),
-	)
+	classifier, err := topicClassifier()
 	if err != nil {
 		return err
 	}

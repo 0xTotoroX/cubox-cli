@@ -72,6 +72,8 @@ Resolve tag IDs with `tag list` when the user gives names. For deletion or merge
 
 `cubox-cli tag topic --id CARD_ID` previews AI-selected themes. It selects only existing direct children of `主题`, preserving their model-ranked order. `--apply` appends missing approved tags and leaves all other tags and the folder unchanged. A card gets 0–3 topic tags total; a substantial description without parsed article content permits at most one; title-only cards get none. New topic names are suggestions for human review and are never created by this command.
 
+For multiple cards, run `tag topic collect --id CARD1,CARD2 --out PLAN` to group new candidates by card in a local file. Use `tag topic review --plan PLAN --name NAME --decision approved|merged|rejected` for each candidate; a merged name also needs `--target CANONICAL_NAME`. Create reviewed new `主题/*` tags with `tag new` only after approval. `tag topic backfill --plan PLAN` previews current-content classifications, and `--apply` appends them. Backfill refuses pending candidates or missing approved targets and may partially apply before an error, so inspect its reported count. The plan has card titles, IDs, and model reasons that may quote the content, but not the full article body.
+
 The model endpoint and model name come from `CUBOX_TOPIC_API_URL` and `CUBOX_TOPIC_MODEL`; remote endpoints also need `CUBOX_TOPIC_API_KEY` in the local environment. Card content is sent to that endpoint. Do not set up or call a paid model using unapproved credentials. The current account may have no `主题/*` tags; do not treat `来源/*`, `处理/*`, `skill`, or `笔记` as topic vocabulary, and do not create topic tags without the user's reviewed list.
 
 ### Filter / Search Cards

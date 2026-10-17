@@ -230,7 +230,7 @@ cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID
 
 ### `cubox-cli tag topic`
 
-根据卡片正文，从已审核的 `主题/*` 标签中选择 0～3 个，按核心议题排序。词表就是 Cubox 中 `主题` 的**直属子标签**；先审核词表，再用 `tag new --name 主题` 和 `tag new --name 词名 --parent 主题ID` 建立。不会自动创建新主题标签。
+根据卡片正文，按核心议题提炼 0～3 个主题。优先匹配 Cubox 中 `主题` 的直属子标签（已审核词表）；新概念先进入候选清单，由内容提炼，无需事先手写完整词表。已审核主题与新候选合计最多 3 个。文件夹只提供背景，不会被复制成标签层级。
 
 ```bash
 export CUBOX_TOPIC_API_URL=https://你的模型服务/v1/chat/completions
@@ -242,6 +242,22 @@ cubox-cli tag topic --id CARD_ID --apply  # 仅追加缺少的已审核主题标
 ```
 
 正文无法解析时，仅在描述足够充分的情况下最多建议 1 个主题；只有标题或证据不足时不打标。模型提出的新词只会出现在 `suggested_new_topics` 中，须人工审核后才可建标签。`--apply` 会重新核对词表、卡片与写入结果，保留 `来源`、`处理`、`skill`、`笔记` 等原有标签和文件夹。卡片正文与描述会发往所配置的模型接口；默认不写入 Cubox。
+
+批量流程按“收集候选 → 审核词表 → 建立审核通过的标签 → 预览回填 → 明确执行”进行：
+
+```bash
+cubox-cli tag topic collect --id CARD1,CARD2 --out topic-plan.json
+cubox-cli tag topic review --plan topic-plan.json --name MCP --decision approved
+cubox-cli tag topic review --plan topic-plan.json --name "MCP工具" --decision merged --target MCP
+cubox-cli tag topic review --plan topic-plan.json --name "过宽的词" --decision rejected
+
+cubox-cli tag new --name 主题                   # 若尚无主题根标签
+cubox-cli tag new --name MCP --parent 主题ID   # 仅创建审核通过的新词
+cubox-cli tag topic backfill --plan topic-plan.json          # 只预览
+cubox-cli tag topic backfill --plan topic-plan.json --apply  # 才追加标签
+```
+
+`collect` 逐帖读取正文，在本地计划文件中汇总候选词、涉及的卡片及理由，不修改 Cubox。`review` 只修改该文件；所有候选词都须标为 `approved`、`merged` 或 `rejected`，且通过或合并后的目标词须已存在于 `主题/*`，回填才会继续。合并词会提示模型使用审核后的目标词，拒绝词不会再次出现在候选输出中。回填会依据卡片**当前**内容重新判断，不直接照搬收集阶段的卡片建议；内容不足仍不打标。计划文件不保存完整正文，但包含卡片标题、ID 和模型理由；理由可能摘录正文，应妥善保管。批量写入没有事务；若 `--apply` 中途失败，先前成功的卡片不会自动回滚，命令会报告已验证成功的数量，并提示当前失败的卡片可能也发生了变化。
 
 ### `cubox-cli tag delete`
 

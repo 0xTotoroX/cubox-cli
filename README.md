@@ -257,7 +257,7 @@ Both flags take IDs from `tag list` and are required. This fork command uses the
 
 ### `cubox-cli tag topic`
 
-Classify a card from its parsed article content and rank 0–3 existing, reviewed `主题/*` tags by centrality. The approved vocabulary is the direct children of the `主题` tag in Cubox; create and review those tags before applying. New topic names are suggestions only and are never created automatically.
+Classify a card from its parsed article content and rank 0–3 topics by centrality. Existing direct children of `主题` form the reviewed vocabulary; the model proposes new concepts from content for later review. Selected approved topics and new suggestions total at most three. Folder paths are context, not a second tag hierarchy.
 
 ```bash
 export CUBOX_TOPIC_API_URL=https://your-model-service/v1/chat/completions
@@ -269,6 +269,21 @@ cubox-cli tag topic --id CARD_ID --apply  # append missing approved topics
 ```
 
 If article parsing fails, the command uses a substantial description and allows at most one topic; title-only or thin content is left untagged. `--apply` rechecks the vocabulary and card before writing, then verifies the result. It preserves existing tags and folders. The card's content and description are sent to the configured model endpoint; preview is the default.
+
+For a batch, collect candidates into a local plan, review every candidate, create only the approved topic tags, then preview and apply the backfill:
+
+```bash
+cubox-cli tag topic collect --id CARD1,CARD2 --out topic-plan.json
+cubox-cli tag topic review --plan topic-plan.json --name MCP --decision approved
+cubox-cli tag topic review --plan topic-plan.json --name "MCP tools" --decision merged --target MCP
+cubox-cli tag topic review --plan topic-plan.json --name "too broad" --decision rejected
+cubox-cli tag new --name 主题                  # if the root does not exist
+cubox-cli tag new --name MCP --parent ROOT_ID # create reviewed new terms only
+cubox-cli tag topic backfill --plan topic-plan.json          # preview
+cubox-cli tag topic backfill --plan topic-plan.json --apply  # append tags
+```
+
+`collect` and `review` never change Cubox. Backfill requires every candidate reviewed and every approved or merged target present under `主题`. It reclassifies current card content rather than replaying old per-card suggestions. Reviewed aliases point to their canonical topic and rejected names are filtered from later suggestions. The local plan does not store the full article body, but it contains card titles, IDs, and model reasons that may quote the article. Batch writes are not transactional: on failure, earlier successful card updates remain. The CLI reports the number of verified updates and warns that the failing card may also have changed.
 
 ### `cubox-cli tag delete`
 

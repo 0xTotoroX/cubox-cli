@@ -27,6 +27,9 @@ cubox-cli recycle clean --id ID[,ID2,...]        # permanent, destructive
 cubox-cli tag new --name NAME [--parent TAG_ID]
 cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID  # preserves tag ID and card links
 cubox-cli tag topic --id CARD_ID [--apply]              # AI topic preview; add approved tags only
+cubox-cli tag topic collect --id CARD1,CARD2 --out PLAN # collect new concepts locally
+cubox-cli tag topic review --plan PLAN --name NAME --decision approved|merged|rejected
+cubox-cli tag topic backfill --plan PLAN [--apply]       # reclassify reviewed batch
 cubox-cli tag sort --json '{...}'                # experimental drag-order payload
 
 # Marks (highlights)
