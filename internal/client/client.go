@@ -25,9 +25,9 @@ type Client struct {
 	// Safety: global request throttle + consecutive-error circuit breaker.
 	// Added after a 2026-10-09 incident where an unthrottled debug loop
 	// triggered server-side account state corruption.
-	mu          sync.Mutex
-	lastReq     time.Time
-	errStreak   int
+	mu        sync.Mutex
+	lastReq   time.Time
+	errStreak int
 }
 
 const (
@@ -557,6 +557,13 @@ func (c *Client) WebCardsAddTagsByName(ids []string, addNames []string, deleteTa
 }
 
 // ---- Tags (web group) ----
+
+// WebMoveTag moves an existing tag without changing its ID or card links.
+// The fields match the Cubox web app's /tag/sort request.
+func (c *Client) WebMoveTag(id, parentID string) (json.RawMessage, error) {
+	form := url.Values{"sourceTagId": {id}, "targetParentId": {parentID}}
+	return c.webPostForm("/c/api/tag/sort", form)
+}
 
 // WebTagNew creates a tag via POST /c/api/v2/tag/new.
 // parentID may be empty for a root-level tag. linkedName is the leaf name.

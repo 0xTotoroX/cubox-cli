@@ -218,6 +218,16 @@ cubox-cli tag update --id TAG_ID --new-name NEW_NAME
 | `--id ID`         | 要重命名的标签 ID（必填）                          |
 | `--new-name NAME` | 新的叶子名称（必填；不能包含 `/`）                     |
 
+### `cubox-cli tag move`
+
+将现有标签移动到另一标签下，保留原标签 ID 和卡片关联。命令会检查目标、同名冲突及循环层级，并在执行后核对父标签。
+
+```bash
+cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID
+```
+
+`--id` 和 `--parent` 都使用 `tag list` 返回的标签 ID，均为必填。此命令使用 Cubox 客户端登录凭据，与 fork 的其他 web/app 命令相同。
+
 ### `cubox-cli tag delete`
 
 按 ID 批量删除标签。被删除标签关联的卡片本身保留，仅解除标签关联。

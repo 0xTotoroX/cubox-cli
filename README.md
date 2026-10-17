@@ -245,6 +245,16 @@ cubox-cli tag update --id TAG_ID --new-name NEW_NAME
 | `--id ID`           | Tag ID to rename (required)                          |
 | `--new-name NAME`   | New leaf name (required; must not contain `/`)       |
 
+### `cubox-cli tag move`
+
+Move an existing tag under another tag, retaining its ID and card associations. The command checks the destination, name collisions and parent cycles, then verifies the new parent.
+
+```bash
+cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID
+```
+
+Both flags take IDs from `tag list` and are required. This fork command uses the Cubox app login credential, like the other web/app commands.
+
 ### `cubox-cli tag delete`
 
 Batch delete one or more tags by ID. Cards previously tagged with the deleted tag(s) remain; only the tag-card association is removed.

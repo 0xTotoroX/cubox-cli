@@ -18,6 +18,9 @@ var (
 
 	tagMergeSourceIDs []string
 	tagMergeTargetID  string
+
+	tagMoveID       string
+	tagMoveParentID string
 )
 
 var tagCmd = &cobra.Command{
@@ -71,6 +74,15 @@ the source tags are then deleted.
 Examples:
   cubox-cli tag merge --source 7342187912403881105,7342187917722258501 --target 7247925099053977508`,
 	RunE: runTagMerge,
+}
+
+var tagMoveCmd = &cobra.Command{
+	Use:   "move",
+	Short: "Move an existing tag under another tag",
+	Long: `Move an existing tag under a parent tag while retaining its ID and
+card associations. Both --id and --parent take tag IDs from "tag list".`,
+	Example: `  cubox-cli tag move --id 7501950006702640053 --parent 7479207167292083787`,
+	RunE:    runTagMove,
 }
 
 // ---- tag new / sort (web/app group) ----
@@ -155,11 +167,16 @@ func init() {
 	tagMergeCmd.Flags().StringVar(&tagMergeTargetID, "target", "", "target tag ID to merge into (required)")
 	tagMergeCmd.MarkFlagRequired("target")
 
+	tagMoveCmd.Flags().StringVar(&tagMoveID, "id", "", "existing tag ID to move (required)")
+	tagMoveCmd.MarkFlagRequired("id")
+	tagMoveCmd.Flags().StringVar(&tagMoveParentID, "parent", "", "destination parent tag ID (required)")
+	tagMoveCmd.MarkFlagRequired("parent")
+
 	tagNewCmd.Flags().StringVar(&tagNewName, "name", "", "tag name (required)")
 	tagNewCmd.Flags().StringVar(&tagNewParent, "parent", "", "parent tag ID for nesting (optional)")
 	tagSortCmd.Flags().StringVar(&tagSortJSON, "json", "", "sort payload as JSON (required, experimental)")
 
-	tagCmd.AddCommand(tagListCmd, tagUpdateCmd, tagDeleteCmd, tagMergeCmd, tagNewCmd, tagSortCmd)
+	tagCmd.AddCommand(tagListCmd, tagUpdateCmd, tagDeleteCmd, tagMergeCmd, tagMoveCmd, tagNewCmd, tagSortCmd)
 	rootCmd.AddCommand(tagCmd)
 }
 
@@ -180,6 +197,82 @@ func runTagList(cmd *cobra.Command, args []string) error {
 	}
 	printJSON(tags)
 	return nil
+}
+
+func runTagMove(cmd *cobra.Command, args []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	c := client.New(cfg.BaseURL(), cfg.Token)
+	tags, err := c.ListTags()
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]client.Tag, len(tags))
+	for _, tag := range tags {
+		byID[tag.ID] = tag
+	}
+	source, ok := byID[tagMoveID]
+	if !ok {
+		return fmt.Errorf("source tag %s does not exist", tagMoveID)
+	}
+	parent, ok := byID[tagMoveParentID]
+	if !ok {
+		return fmt.Errorf("parent tag %s does not exist", tagMoveParentID)
+	}
+	if source.ParentID != nil && *source.ParentID == parent.ID {
+		return fmt.Errorf("tag %s is already under %s", source.ID, parent.ID)
+	}
+	seen := make(map[string]bool)
+	for ancestor := parent; ; {
+		if ancestor.ID == source.ID {
+			return fmt.Errorf("cannot move a tag under itself or its descendant")
+		}
+		if seen[ancestor.ID] {
+			return fmt.Errorf("parent chain contains a cycle at tag %s", ancestor.ID)
+		}
+		seen[ancestor.ID] = true
+		if ancestor.ParentID == nil {
+			break
+		}
+		next, exists := byID[*ancestor.ParentID]
+		if !exists {
+			return fmt.Errorf("parent chain contains unknown tag %s", *ancestor.ParentID)
+		}
+		ancestor = next
+	}
+	for _, tag := range tags {
+		if tag.ID != source.ID && tag.ParentID != nil && *tag.ParentID == parent.ID && tag.Name == source.Name {
+			return fmt.Errorf("destination already contains tag %q", source.Name)
+		}
+	}
+	web, err := webClient(cfg)
+	if err != nil {
+		return err
+	}
+	if _, err := web.WebMoveTag(source.ID, parent.ID); err != nil {
+		return err
+	}
+	updated, err := c.ListTags()
+	if err != nil {
+		return fmt.Errorf("move request succeeded, but verification failed: %w", err)
+	}
+	for _, tag := range updated {
+		if tag.ID == source.ID {
+			if tag.ParentID == nil || *tag.ParentID != parent.ID {
+				return fmt.Errorf("move request returned success, but tag %s is not under %s", source.ID, parent.ID)
+			}
+			msg := fmt.Sprintf("Moved tag %s to %s.", source.ID, tag.NestedName)
+			if outputFormat == "text" {
+				fmt.Println(msg)
+			} else {
+				printJSON(tagOpResult{Count: 1, Message: msg})
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("move request returned success, but tag %s is missing from the tag list", source.ID)
 }
 
 type tagOpResult struct {

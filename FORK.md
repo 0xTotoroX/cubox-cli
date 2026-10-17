@@ -25,6 +25,7 @@ cubox-cli recycle clean --id ID[,ID2,...]        # permanent, destructive
 
 # Tags (web/app group)
 cubox-cli tag new --name NAME [--parent TAG_ID]
+cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID  # preserves tag ID and card links
 cubox-cli tag sort --json '{...}'                # experimental drag-order payload
 
 # Marks (highlights)
