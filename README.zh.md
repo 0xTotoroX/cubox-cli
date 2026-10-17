@@ -228,6 +228,21 @@ cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID
 
 `--id` 和 `--parent` 都使用 `tag list` 返回的标签 ID，均为必填。此命令使用 Cubox 客户端登录凭据，与 fork 的其他 web/app 命令相同。
 
+### `cubox-cli tag topic`
+
+根据卡片正文，从已审核的 `主题/*` 标签中选择 0～3 个，按核心议题排序。词表就是 Cubox 中 `主题` 的**直属子标签**；先审核词表，再用 `tag new --name 主题` 和 `tag new --name 词名 --parent 主题ID` 建立。不会自动创建新主题标签。
+
+```bash
+export CUBOX_TOPIC_API_URL=https://你的模型服务/v1/chat/completions
+export CUBOX_TOPIC_MODEL=模型名
+# 远程模型服务还需在本机设置 CUBOX_TOPIC_API_KEY；不要把密钥放入命令参数或分享给 Agent。
+
+cubox-cli tag topic --id CARD_ID          # 只预览
+cubox-cli tag topic --id CARD_ID --apply  # 仅追加缺少的已审核主题标签
+```
+
+正文无法解析时，仅在描述足够充分的情况下最多建议 1 个主题；只有标题或证据不足时不打标。模型提出的新词只会出现在 `suggested_new_topics` 中，须人工审核后才可建标签。`--apply` 会重新核对词表、卡片与写入结果，保留 `来源`、`处理`、`skill`、`笔记` 等原有标签和文件夹。卡片正文与描述会发往所配置的模型接口；默认不写入 Cubox。
+
 ### `cubox-cli tag delete`
 
 按 ID 批量删除标签。被删除标签关联的卡片本身保留，仅解除标签关联。

@@ -255,6 +255,21 @@ cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID
 
 Both flags take IDs from `tag list` and are required. This fork command uses the Cubox app login credential, like the other web/app commands.
 
+### `cubox-cli tag topic`
+
+Classify a card from its parsed article content and rank 0–3 existing, reviewed `主题/*` tags by centrality. The approved vocabulary is the direct children of the `主题` tag in Cubox; create and review those tags before applying. New topic names are suggestions only and are never created automatically.
+
+```bash
+export CUBOX_TOPIC_API_URL=https://your-model-service/v1/chat/completions
+export CUBOX_TOPIC_MODEL=your-model
+# Also set CUBOX_TOPIC_API_KEY locally for a remote model service.
+
+cubox-cli tag topic --id CARD_ID          # preview only
+cubox-cli tag topic --id CARD_ID --apply  # append missing approved topics
+```
+
+If article parsing fails, the command uses a substantial description and allows at most one topic; title-only or thin content is left untagged. `--apply` rechecks the vocabulary and card before writing, then verifies the result. It preserves existing tags and folders. The card's content and description are sent to the configured model endpoint; preview is the default.
+
 ### `cubox-cli tag delete`
 
 Batch delete one or more tags by ID. Cards previously tagged with the deleted tag(s) remain; only the tag-card association is removed.
