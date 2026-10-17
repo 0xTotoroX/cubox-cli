@@ -181,8 +181,12 @@ func (p Plan) Validate(requireReviewed bool) error {
 // Backfill reclassifies the plan's cards against the current approved vocabulary.
 // It never creates tags; approved candidate targets must already exist under 主题.
 func Backfill(ctx context.Context, store Store, classifier Classifier, plan Plan, apply bool) (BatchReport, error) {
+	return backfill(ctx, store, classifier, plan, apply, true)
+}
+
+func backfill(ctx context.Context, store Store, classifier Classifier, plan Plan, apply, requireReviewed bool) (BatchReport, error) {
 	report := BatchReport{Results: []Result{}}
-	if err := plan.Validate(true); err != nil {
+	if err := plan.Validate(requireReviewed); err != nil {
 		return report, err
 	}
 	tags, err := store.ListTags()
@@ -195,8 +199,15 @@ func Backfill(ctx context.Context, store Store, classifier Classifier, plan Plan
 	}
 	aliases := map[string]string{}
 	rejected := []string{}
+	pending := map[string]bool{}
 	for _, candidate := range plan.Candidates {
-		if (candidate.Review == "approved" || candidate.Review == "merged") && !available[candidate.Target] {
+		if candidate.Review == "pending" {
+			pending[candidate.Name] = true
+		}
+	}
+	for _, candidate := range plan.Candidates {
+		if (candidate.Review == "approved" || candidate.Review == "merged") && !available[candidate.Target] &&
+			!(!requireReviewed && candidate.Review == "merged" && pending[candidate.Target]) {
 			return report, fmt.Errorf("reviewed topic %q is missing under 主题; create it before backfill", candidate.Target)
 		}
 		if (candidate.Review == "approved" || candidate.Review == "merged") && candidate.Name != candidate.Target {

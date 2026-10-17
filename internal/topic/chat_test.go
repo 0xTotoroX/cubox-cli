@@ -51,3 +51,30 @@ func TestChatClassifierRejectsUnconfiguredOrInsecureRemote(t *testing.T) {
 		t.Fatal("missing remote key was accepted")
 	}
 }
+
+func TestChatClassifierConsolidatesCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if len(body.Messages) != 2 || body.Messages[0].Content != consolidationInstructions {
+			t.Errorf("consolidation instructions missing: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"assignments\":[{\"name\":\"检索增强生成\",\"target\":\"RAG\",\"supported_card_ids\":[\"b\"]}]}"}}]}`))
+	}))
+	defer server.Close()
+	classifier, err := NewChatClassifier(server.URL, "", "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := classifier.Consolidate(context.Background(), ConsolidationInput{Candidates: []CandidateEvidence{{Name: "检索增强生成"}}})
+	if err != nil || len(result.Assignments) != 1 || result.Assignments[0].Target != "RAG" {
+		t.Fatalf("unexpected consolidation: %+v %v", result, err)
+	}
+}

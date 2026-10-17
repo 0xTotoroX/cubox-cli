@@ -20,8 +20,8 @@ var tagTopicCmd = &cobra.Command{
 	Long: `Classify one card from its parsed content or, when unavailable, a
 substantial description. Only existing direct children of the 主题 tag are
 eligible. Preview is the default; --apply adds missing approved tags only.
-New topic names are suggestions for review and are never created automatically.
-Use collect, review, and backfill for a batch of cards.
+For this single-card command, new topic names are suggestions only.
+Use collect, review or auto-review, and backfill for a batch of cards.
 
 Set CUBOX_TOPIC_API_URL to an OpenAI-compatible chat completions URL,
 CUBOX_TOPIC_MODEL to the model name, and CUBOX_TOPIC_API_KEY for a remote API.

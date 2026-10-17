@@ -29,7 +29,9 @@ cubox-cli tag move --id TAG_ID --parent PARENT_TAG_ID  # preserves tag ID and ca
 cubox-cli tag topic --id CARD_ID [--apply]              # AI topic preview; add approved tags only
 cubox-cli tag topic collect --id CARD1,CARD2 --out PLAN # collect new concepts locally
 cubox-cli tag topic review --plan PLAN --name NAME --decision approved|merged|rejected
+cubox-cli tag topic auto-review --plan PLAN          # merge synonyms and auto-approve repeated, supported topics locally
 cubox-cli tag topic backfill --plan PLAN [--apply]       # reclassify reviewed batch
+cubox-cli tag topic backfill --plan PLAN --auto [--apply] # keep pending terms; apply creates approved tags before backfill
 cubox-cli tag sort --json '{...}'                # experimental drag-order payload
 
 # Marks (highlights)

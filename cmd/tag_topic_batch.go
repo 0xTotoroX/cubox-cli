@@ -19,8 +19,10 @@ var (
 	topicReviewName     string
 	topicReviewDecision string
 	topicReviewTarget   string
+	topicAutoReviewPlan string
 	topicBackfillPlan   string
 	topicBackfillApply  bool
+	topicBackfillAuto   bool
 )
 
 var topicCollectCmd = &cobra.Command{
@@ -49,10 +51,23 @@ var topicBackfillCmd = &cobra.Command{
 	Long: `All candidates in the local plan must be reviewed first. Approved and
 merged topic names must already exist under 主题. Each card is classified again
 from its current content. Preview is the default; --apply appends missing tags.
-If an error occurs during --apply, earlier cards may already have been updated.`,
+With --auto, pending candidates may remain; preview shows planned tag creation.
+--auto --apply creates approved 主题 tags before appending them to cards.
+If an error occurs during --apply, earlier tags or cards may already have changed.`,
 	Example: `  cubox-cli tag topic backfill --plan topic-plan.json
   cubox-cli tag topic backfill --plan topic-plan.json --apply`,
 	RunE: runTopicBackfill,
+}
+
+var topicAutoReviewCmd = &cobra.Command{
+	Use:   "auto-review",
+	Short: "Merge synonyms and auto-approve repeated, well-supported topics",
+	Long: `Use the configured model to compare pending concepts with existing topics
+and each other. A new topic is auto-approved only when at least two distinct
+cards have substantial article bodies and model-confirmed support. Singletons
+and weak evidence remain pending. This command only changes the local plan.`,
+	Example: `  cubox-cli tag topic auto-review --plan topic-plan.json`,
+	RunE:    runTopicAutoReview,
 }
 
 func init() {
@@ -67,10 +82,13 @@ func init() {
 	topicReviewCmd.Flags().StringVar(&topicReviewDecision, "decision", "", "approved, merged, or rejected (required)")
 	topicReviewCmd.MarkFlagRequired("decision")
 	topicReviewCmd.Flags().StringVar(&topicReviewTarget, "target", "", "canonical topic leaf name for approved or merged candidate")
+	topicAutoReviewCmd.Flags().StringVar(&topicAutoReviewPlan, "plan", "", "local review plan path (required)")
+	topicAutoReviewCmd.MarkFlagRequired("plan")
 	topicBackfillCmd.Flags().StringVar(&topicBackfillPlan, "plan", "", "reviewed local plan path (required)")
 	topicBackfillCmd.MarkFlagRequired("plan")
 	topicBackfillCmd.Flags().BoolVar(&topicBackfillApply, "apply", false, "append approved topics to the plan's cards")
-	tagTopicCmd.AddCommand(topicCollectCmd, topicReviewCmd, topicBackfillCmd)
+	topicBackfillCmd.Flags().BoolVar(&topicBackfillAuto, "auto", false, "allow pending concepts and create auto-approved topic tags with --apply")
+	tagTopicCmd.AddCommand(topicCollectCmd, topicReviewCmd, topicAutoReviewCmd, topicBackfillCmd)
 }
 
 func topicClassifier() (*topic.ChatClassifier, error) {
@@ -116,12 +134,9 @@ func runTopicReview(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTopicBackfill(cmd *cobra.Command, args []string) error {
-	plan, err := loadTopicPlan(topicBackfillPlan)
+func runTopicAutoReview(cmd *cobra.Command, args []string) error {
+	plan, err := loadTopicPlan(topicAutoReviewPlan)
 	if err != nil {
-		return err
-	}
-	if err := plan.Validate(true); err != nil {
 		return err
 	}
 	cfg, err := config.Load()
@@ -132,7 +147,48 @@ func runTopicBackfill(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	report, err := topic.Backfill(cmd.Context(), client.New(cfg.BaseURL(), cfg.Token), classifier, plan, topicBackfillApply)
+	report, err := topic.AutoReview(cmd.Context(), client.New(cfg.BaseURL(), cfg.Token), classifier, &plan)
+	if err != nil {
+		return err
+	}
+	if err := saveTopicPlan(topicAutoReviewPlan, plan, false); err != nil {
+		return err
+	}
+	printJSON(report)
+	return nil
+}
+
+func runTopicBackfill(cmd *cobra.Command, args []string) error {
+	plan, err := loadTopicPlan(topicBackfillPlan)
+	if err != nil {
+		return err
+	}
+	if err := plan.Validate(!topicBackfillAuto); err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	classifier, err := topicClassifier()
+	if err != nil {
+		return err
+	}
+	store := client.New(cfg.BaseURL(), cfg.Token)
+	if topicBackfillAuto {
+		var creator topic.TagCreator
+		if topicBackfillApply {
+			creator = &lazyTopicCreator{cfg: cfg}
+		}
+		report, err := topic.AutoBackfill(cmd.Context(), store, creator, classifier, plan, topicBackfillApply)
+		if err != nil {
+			printJSON(report)
+			return err
+		}
+		printJSON(report)
+		return nil
+	}
+	report, err := topic.Backfill(cmd.Context(), store, classifier, plan, topicBackfillApply)
 	if err != nil {
 		if topicBackfillApply && report.Applied > 0 {
 			printJSON(report)
@@ -141,6 +197,22 @@ func runTopicBackfill(cmd *cobra.Command, args []string) error {
 	}
 	printJSON(report)
 	return nil
+}
+
+type lazyTopicCreator struct {
+	cfg *config.Config
+	web *client.Client
+}
+
+func (c *lazyTopicCreator) CreateTopicTag(name, parentID string) error {
+	if c.web == nil {
+		web, err := webClient(c.cfg)
+		if err != nil {
+			return err
+		}
+		c.web = web
+	}
+	return topic.WebTagCreator{Web: c.web}.CreateTopicTag(name, parentID)
 }
 
 func loadTopicPlan(path string) (topic.Plan, error) {

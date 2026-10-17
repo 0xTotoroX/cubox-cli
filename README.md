@@ -285,6 +285,17 @@ cubox-cli tag topic backfill --plan topic-plan.json --apply  # append tags
 
 `collect` and `review` never change Cubox. Backfill requires every candidate reviewed and every approved or merged target present under `主题`. It reclassifies current card content rather than replaying old per-card suggestions. Reviewed aliases point to their canonical topic and rejected names are filtered from later suggestions. The local plan does not store the full article body, but it contains card titles, IDs, and model reasons that may quote the article. Batch writes are not transactional: on failure, earlier successful card updates remain. The CLI reports the number of verified updates and warns that the failing card may also have changed.
 
+Optional automatic review keeps the same local plan:
+
+```bash
+cubox-cli tag topic collect --id CARD1,CARD2 --out topic-plan.json
+cubox-cli tag topic auto-review --plan topic-plan.json
+cubox-cli tag topic backfill --plan topic-plan.json --auto          # preview
+cubox-cli tag topic backfill --plan topic-plan.json --auto --apply  # create approved tags and append them
+```
+
+`auto-review` maps strict synonyms to existing reviewed topics first. A new canonical topic is auto-approved only when the model confirms support in substantial article bodies on at least two distinct cards. Singletons, description-only evidence, and uncertain candidates remain pending in the plan. Synonyms within one card can still be merged into one pending candidate; merging alone does not approve it. Preview uses temporary tag IDs and never changes Cubox. `--auto --apply` creates missing approved `主题` tags using the Cubox app credential, then reclassifies current content and appends topics while preserving existing tags and folders. Tag creation and batch backfill are not transactional; inspect `created`, `applied`, and any error after a partial failure. The model sees article excerpts during synonym review; real semantic quality requires validation with the configured model.
+
 ### `cubox-cli tag delete`
 
 Batch delete one or more tags by ID. Cards previously tagged with the deleted tag(s) remain; only the tag-card association is removed.

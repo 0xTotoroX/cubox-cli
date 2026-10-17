@@ -257,7 +257,18 @@ cubox-cli tag topic backfill --plan topic-plan.json          # 只预览
 cubox-cli tag topic backfill --plan topic-plan.json --apply  # 才追加标签
 ```
 
-`collect` 逐帖读取正文，在本地计划文件中汇总候选词、涉及的卡片及理由，不修改 Cubox。`review` 只修改该文件；所有候选词都须标为 `approved`、`merged` 或 `rejected`，且通过或合并后的目标词须已存在于 `主题/*`，回填才会继续。合并词会提示模型使用审核后的目标词，拒绝词不会再次出现在候选输出中。回填会依据卡片**当前**内容重新判断，不直接照搬收集阶段的卡片建议；内容不足仍不打标。计划文件不保存完整正文，但包含卡片标题、ID 和模型理由；理由可能摘录正文，应妥善保管。批量写入没有事务；若 `--apply` 中途失败，先前成功的卡片不会自动回滚，命令会报告已验证成功的数量，并提示当前失败的卡片可能也发生了变化。
+`collect` 逐帖读取正文，在本地计划文件中汇总候选词、涉及的卡片及理由，不修改 Cubox。手动路径下，`review` 只修改该文件；所有候选词都须标为 `approved`、`merged` 或 `rejected`，且通过或合并后的目标词须已存在于 `主题/*`，回填才会继续。合并词会提示模型使用审核后的目标词，拒绝词不会再次出现在候选输出中。回填会依据卡片**当前**内容重新判断，不直接照搬收集阶段的卡片建议；内容不足仍不打标。计划文件不保存完整正文，但包含卡片标题、ID 和模型理由；理由可能摘录正文，应妥善保管。批量写入没有事务；若 `--apply` 中途失败，先前成功的卡片不会自动回滚，命令会报告已验证成功的数量，并提示当前失败的卡片可能也发生了变化。
+
+可选自动模式沿用同一份计划文件：
+
+```bash
+cubox-cli tag topic collect --id CARD1,CARD2 --out topic-plan.json
+cubox-cli tag topic auto-review --plan topic-plan.json
+cubox-cli tag topic backfill --plan topic-plan.json --auto          # 预览拟建标签和逐帖结果
+cubox-cli tag topic backfill --plan topic-plan.json --auto --apply  # 建标签并追加到卡片
+```
+
+`auto-review` 会把候选词与现有审核词、其他候选词做严格近义合并。一个新词只有在**至少两篇不同卡片的充分正文**里获得模型确认，才自动批准；只出现一次、仅有描述、正文不足或模型不确定时保留为 `pending`。同一篇文章里的两个近义词也会合并为一个待定词，合并本身不等于批准。它只修改本地计划文件。`backfill --auto` 容许这些待定词继续留在清单；默认预览使用临时标签 ID，不写入 Cubox。`--auto --apply` 使用 Cubox App 登录凭据创建缺失的 `主题` 根标签和已批准的直属子标签，再基于当前正文重新判断并追加标签；现有标签和文件夹保留。建标签与批量回填没有事务，出错时查看返回的 `created`、`applied` 和失败信息后再处理。模型会读取候选卡片的正文摘录用于合并判断，真实语义准确度仍需实际模型验证。
 
 ### `cubox-cli tag delete`
 
